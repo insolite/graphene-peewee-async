@@ -4,7 +4,7 @@ import peewee
 from peewee import fn, SQL, Clause
 
 from graphql_relay.connection.arrayconnection import connection_from_list_slice
-from graphene import Field, List, ConnectionField, is_node, Argument, String, Int, PageInfo
+from graphene import Field, List, ConnectionField, is_node, Argument, String, Int, PageInfo, Connection
 from graphene.utils.str_converters import to_snake_case
 from .utils import (
     get_type_for_model, maybe_query, get_fields, get_filtering_args,
@@ -25,8 +25,11 @@ class PeeweeConnectionField(ConnectionField):
                  # order_by=None,
                  # page=None, paginate_by=None,
                  *args, **kwargs):
-        filters_args = get_filtering_args(type._meta.model,
-                                          filters or type._meta.filters)
+        node = type
+        if issubclass(node, Connection):
+            node = node._meta.node
+        filters_args = get_filtering_args(node._meta.model,
+                                          filters or node._meta.filters)
         # self.order_by = order_by or type._meta.order_by
         # self.page = page or type._meta.page
         # self.paginate_by = paginate_by or type._meta.paginate_by
