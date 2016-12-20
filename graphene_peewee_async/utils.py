@@ -169,7 +169,7 @@ def get_filtering_args(model, filters, prefix=''):
 
 
 def get_requested_models(fields, related_model):
-    if tuple(fields.keys()) == ('edges',):
+    if 'edges' in fields.keys():
         fields = fields['edges']['node']
     models = []
     for key, val in fields.items():
