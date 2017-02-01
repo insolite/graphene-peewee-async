@@ -126,7 +126,7 @@ class PeeweeConnectionField(ConnectionField):
             requested_models = get_requested_models(get_fields(info), model)
             query = model.select(model, *requested_models)
             for related_model in requested_models:
-                query = query.join(related_model,
+                query = query.join(related_model.alias(),
                                    peewee.JOIN_LEFT_OUTER) # TODO: on
             query = cls.filter(query, args)
             query = cls.order(model, query, order)
