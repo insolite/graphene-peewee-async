@@ -138,33 +138,35 @@ def get_filtering_args(model, filters, prefix=''):
     result = {}
     for key, val in filters.items():
         field = fields[key]
-        if isinstance(field, peewee.ForeignKeyField):
-            extra = get_filtering_args(field.rel_model, val,
-                                       '{}{}{}'.format(prefix, key, DELIM))
-            result.update(extra)
-            pk_field = field.rel_model._meta.primary_key
-            for lookup in (all_lookups + ['']):
-                field_name = '{}_{}'.format(key, pk_field.name)
-                argument_name = get_arg_name(prefix, field_name, lookup)
-                graphql_field = convert_peewee_field(pk_field)
-                lookup_wrapper = lookup_wrappers.get(lookup)
-                if lookup_wrapper:
-                    graphql_field = lookup_wrapper(type(graphql_field))
-                    argument = graphql_field.Argument()
-                else:
-                    argument = graphql_field.get_type()().Argument()
-                result[argument_name] = argument
-        else:
-            for lookup in (val + ['']):
-                argument_name = get_arg_name(prefix, key, lookup)
-                graphql_field = convert_peewee_field(field)
-                lookup_wrapper = lookup_wrappers.get(lookup)
-                if lookup_wrapper:
-                    graphql_field = lookup_wrapper(type(graphql_field))
-                    argument = graphql_field.Argument()
-                else:
-                    argument = graphql_field.get_type()().Argument()
-                result[argument_name] = argument
+        is_fkey = isinstance(field, peewee.ForeignKeyField)
+        if is_fkey and model is not field.rel_model:
+            if is_fkey:
+                extra = get_filtering_args(field.rel_model, val,
+                                           '{}{}{}'.format(prefix, key, DELIM))
+                result.update(extra)
+                pk_field = field.rel_model._meta.primary_key
+                for lookup in (all_lookups + ['']):
+                    field_name = '{}_{}'.format(key, pk_field.name)
+                    argument_name = get_arg_name(prefix, field_name, lookup)
+                    graphql_field = convert_peewee_field(pk_field)
+                    lookup_wrapper = lookup_wrappers.get(lookup)
+                    if lookup_wrapper:
+                        graphql_field = lookup_wrapper(type(graphql_field))
+                        argument = graphql_field.Argument()
+                    else:
+                        argument = graphql_field.get_type()().Argument()
+                    result[argument_name] = argument
+            else:
+                for lookup in (val + ['']):
+                    argument_name = get_arg_name(prefix, key, lookup)
+                    graphql_field = convert_peewee_field(field)
+                    lookup_wrapper = lookup_wrappers.get(lookup)
+                    if lookup_wrapper:
+                        graphql_field = lookup_wrapper(type(graphql_field))
+                        argument = graphql_field.Argument()
+                    else:
+                        argument = graphql_field.get_type()().Argument()
+                    result[argument_name] = argument
     return result
 
 
