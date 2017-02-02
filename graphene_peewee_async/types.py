@@ -10,7 +10,7 @@ from graphene.types.utils import merge, yank_fields_from_attrs
 from graphene.utils.is_base_type import is_base_type
 
 from .registry import Registry, get_global_registry
-from .converter import convert_peewee_field_with_choices
+from .converter import convert_peewee_field_with_choices, get_foreign_key_id_field
 from .utils import get_reverse_fields, is_valid_peewee_model
 
 
@@ -34,6 +34,9 @@ def construct_fields(options):
             continue
         converted_field = convert_peewee_field_with_choices(field, options.registry)
         fields[name] = converted_field
+        foreign_field = get_foreign_key_id_field(field)
+        if foreign_field:
+            fields[field.db_column] = foreign_field
     return fields
 
 

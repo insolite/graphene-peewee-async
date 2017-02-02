@@ -20,6 +20,11 @@ def convert_choices(choices):
             yield to_const(str(name)), value
 
 
+def get_foreign_key_id_field(field):
+    if isinstance(field, peewee.ForeignKeyField):
+        return Int(description=field.help_text)
+
+
 def convert_peewee_field_with_choices(field, registry=None):
     choices = getattr(field, 'choices', None)
     if choices:
