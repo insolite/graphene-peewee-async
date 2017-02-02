@@ -123,10 +123,10 @@ class PeeweeConnectionField(ConnectionField):
             order = args.pop(ORDER_BY_FIELD, []) # type._meta.order_by
             page = args.pop(PAGE_FIELD, None) # type._meta.page
             paginate_by = args.pop(PAGINATE_BY_FIELD, None) # type._meta.paginate_by
-            requested_models = get_requested_models(get_fields(info), model)
+            requested_models = [model.alias() for model in get_requested_models(get_fields(info), model)]
             query = model.select(model, *requested_models)
             for related_model in requested_models:
-                query = query.join(related_model.alias(),
+                query = query.join(related_model,
                                    peewee.JOIN_LEFT_OUTER) # TODO: on
             query = cls.filter(query, args)
             query = cls.order(model, query, order)
