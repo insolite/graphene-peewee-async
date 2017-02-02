@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name='graphene-peewee-async',
-    version='1.1.0',
+    version='1.0.0',
 
     description='Graphene peewee-async integration',
     long_description=open('README.rst').read(),
@@ -18,10 +18,7 @@ setup(
         'Development Status :: 3 - Alpha',
         'Intended Audience :: Developers',
         'Topic :: Software Development :: Libraries',
-        'Programming Language :: Python :: 2',
-        'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.3',
         'Programming Language :: Python :: 3.4',
         'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: Implementation :: PyPy',
