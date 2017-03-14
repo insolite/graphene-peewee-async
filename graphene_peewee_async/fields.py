@@ -100,6 +100,17 @@ class PeeweeConnectionField(ConnectionField):
         return query
 
     @classmethod
+    def join(cls, query, models, src_model=None):
+        src_model = src_model or query.model_class
+        for model, child_models in models:
+            model_alias = model.alias()
+            query = query.select(model_alias, *query._select)
+            query = query.switch(src_model)
+            query = query.join(model_alias, peewee.JOIN_LEFT_OUTER)  # TODO: on
+            query = cls.join(query, child_models, model_alias)
+        return query
+
+    @classmethod
     def order(cls, model, query, order):
         if order:
             query = query.order_by(
@@ -123,11 +134,9 @@ class PeeweeConnectionField(ConnectionField):
             order = args.pop(ORDER_BY_FIELD, []) # type._meta.order_by
             page = args.pop(PAGE_FIELD, None) # type._meta.page
             paginate_by = args.pop(PAGINATE_BY_FIELD, None) # type._meta.paginate_by
-            requested_models = [model.alias() for model in get_requested_models(get_fields(info), model)]
-            query = model.select(model, *requested_models)
-            for related_model in requested_models:
-                query = query.join(related_model,
-                                   peewee.JOIN_LEFT_OUTER) # TODO: on
+            requested_models = get_requested_models(get_fields(info), model)
+            query = model.select(model)
+            query = cls.join(query, requested_models)
             query = cls.filter(query, args)
             query = cls.order(model, query, order)
             query = cls.paginate(query, page, paginate_by)

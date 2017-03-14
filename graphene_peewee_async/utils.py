@@ -176,6 +176,5 @@ def get_requested_models(fields, related_model):
     for key, val in fields.items():
         if val != {}:
             child_model = getattr(related_model, key).rel_model
-            models.append(child_model)
-            models += get_requested_models(val, child_model)
+            models.append((child_model, get_requested_models(val, child_model)))
     return models
