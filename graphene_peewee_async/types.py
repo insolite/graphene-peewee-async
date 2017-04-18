@@ -14,6 +14,10 @@ from .converter import convert_peewee_field_with_choices, get_foreign_key_id_fie
 from .utils import get_reverse_fields, is_valid_peewee_model
 
 
+def get_foreign_key_field_name(field_name):
+    return '{}_id'.format(field_name)
+
+
 def construct_fields(options):
     only_fields = options.only_fields
     reverse_fields = get_reverse_fields(options.model)
@@ -36,7 +40,7 @@ def construct_fields(options):
         fields[name] = converted_field
         foreign_field = get_foreign_key_id_field(field)
         if foreign_field:
-            fields[field.db_column] = foreign_field
+            fields[get_foreign_key_field_name(field.name)] = foreign_field
     return fields
 
 
