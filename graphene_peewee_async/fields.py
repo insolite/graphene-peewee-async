@@ -16,6 +16,7 @@ ORDER_BY_FIELD = 'order_by'
 PAGE_FIELD = 'page'
 PAGINATE_BY_FIELD = 'paginate_by'
 TOTAL_FIELD = '__total__'
+DESC_ORDER_CHAR = '-'
 
 
 class PeeweeConnectionField(ConnectionField):
@@ -113,9 +114,15 @@ class PeeweeConnectionField(ConnectionField):
     @classmethod
     def order(cls, model, query, order):
         if order:
-            query = query.order_by(
-                *[cls.get_field(model, to_snake_case(order_item))
-                  for order_item in order])
+            order_fields = []
+            for order_item in order:
+                if order_item.startswith(DESC_ORDER_CHAR):
+                    order_item = order_item.lstrip(DESC_ORDER_CHAR)
+                    order_field = cls.get_field(model, to_snake_case(order_item)).desc()
+                else:
+                    order_field = cls.get_field(model, to_snake_case(order_item))
+                order_fields.append(order_field)
+            query = query.order_by(*order_fields)
         return query
 
     @classmethod
