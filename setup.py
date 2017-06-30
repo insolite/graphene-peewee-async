@@ -1,13 +1,32 @@
+import re
+import os
 from setuptools import find_packages, setup
 
+
+package_name = 'graphene_peewee_async'
+hyphen_package_name = package_name.replace('_', '-')
+
+
+def read_version():
+    regexp = re.compile(r"^__version__\s*=\s*'([\d.abrc]+)'")
+    init_py = os.path.join(os.path.dirname(__file__), package_name, '__init__.py')
+    with open(init_py) as f:
+        for line in f:
+            match = regexp.match(line)
+            if match is not None:
+                return match.group(1)
+        else:
+            raise RuntimeError('Cannot find version in {}'.format(init_py))
+
+
 setup(
-    name='graphene-peewee-async',
-    version='1.0.2',
+    name=hyphen_package_name,
+    version=read_version(),
 
     description='Graphene peewee-async integration',
     long_description=open('README.rst').read(),
 
-    url='https://github.com/insolite/graphene-peewee-async',
+    url='https://github.com/insolite/{}'.format(hyphen_package_name),
 
     author='Oleg Krasnikov',
     author_email='a.insolite@gmail.com',
