@@ -17,6 +17,7 @@ PAGE_FIELD = 'page'
 PAGINATE_BY_FIELD = 'paginate_by'
 TOTAL_FIELD = '__total__'
 DESC_ORDER_CHAR = '-'
+MODELS_DELIMITER = '__'
 
 
 class PeeweeConnectionField(ConnectionField):
@@ -91,8 +92,12 @@ class PeeweeConnectionField(ConnectionField):
         return partial(self.connection_resolver, parent_resolver, self.type, self.get_manager())
 
     @classmethod
-    def get_field(cls, model, name):
-        return getattr(model, name)
+    def get_field(cls, model, full_name, alias_map={}):
+        name, *args = full_name.split(MODELS_DELIMITER, 1)
+        field = getattr(alias_map.get(model, model), name)
+        if args: # Foreign key
+            return cls.get_field(field.rel_model, args[0], alias_map)
+        return field
 
     @classmethod
     def filter(cls, query, args):
@@ -103,24 +108,27 @@ class PeeweeConnectionField(ConnectionField):
     @classmethod
     def join(cls, query, models, src_model=None):
         src_model = src_model or query.model_class
+        alias_map = {}
         for model, child_models in models:
             model_alias = model.alias()
+            alias_map[model] = model_alias
             query = query.select(model_alias, *query._select)
             query = query.switch(src_model)
             query = query.join(model_alias, peewee.JOIN_LEFT_OUTER)  # TODO: on
-            query = cls.join(query, child_models, model_alias)
-        return query
+            query, inner_alias_map = cls.join(query, child_models, model_alias)
+            alias_map.update(inner_alias_map)
+        return query, alias_map
 
     @classmethod
-    def order(cls, model, query, order):
+    def order(cls, model, query, order, alias_map={}):
         if order:
             order_fields = []
             for order_item in order:
                 if order_item.startswith(DESC_ORDER_CHAR):
                     order_item = order_item.lstrip(DESC_ORDER_CHAR)
-                    order_field = cls.get_field(model, to_snake_case(order_item)).desc()
+                    order_field = cls.get_field(model, to_snake_case(order_item), alias_map).desc()
                 else:
-                    order_field = cls.get_field(model, to_snake_case(order_item))
+                    order_field = cls.get_field(model, to_snake_case(order_item), alias_map)
                 order_fields.append(order_field)
             query = query.order_by(*order_fields)
         return query
@@ -143,9 +151,9 @@ class PeeweeConnectionField(ConnectionField):
             paginate_by = args.pop(PAGINATE_BY_FIELD, None) # type._meta.paginate_by
             requested_models = get_requested_models(get_fields(info), model)
             query = model.select(model)
-            query = cls.join(query, requested_models)
+            query, alias_map = cls.join(query, requested_models)
             query = cls.filter(query, args)
-            query = cls.order(model, query, order)
+            query = cls.order(model, query, order, alias_map)
             query = cls.paginate(query, page, paginate_by)
             query = query.aggregate_rows()
             return query
