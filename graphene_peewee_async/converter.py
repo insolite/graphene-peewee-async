@@ -100,8 +100,8 @@ def convert_field_to_list_or_connection(field, registry=None):
         if not _type:
             return
 
-        if is_node(_type):
-            return PeeweeConnectionField(_type)
+        # if is_node(_type):
+        #     return PeeweeConnectionField(_type)
 
         return PeeweeListField(_type)
 
