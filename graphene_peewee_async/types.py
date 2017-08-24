@@ -130,4 +130,4 @@ class PeeweeObjectType(six.with_metaclass(
 
     @classmethod
     def get_node(cls, id, context, info):
-        return asyncio.async(cls.async_get_node(id, context, info))
+        return cls.async_get_node(id, context, info)

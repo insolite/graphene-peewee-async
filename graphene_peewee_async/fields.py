@@ -57,6 +57,7 @@ class PeeweeConnectionField(ConnectionField):
             return self.model
 
     @classmethod
+    @asyncio.coroutine
     def async_connection_resolver(cls, resolver, connection, default_manager, root, args, context, info):
         iterable = resolver(root, args, context, info)
         if iterable is None:
@@ -84,9 +85,7 @@ class PeeweeConnectionField(ConnectionField):
 
     @classmethod
     def connection_resolver(cls, resolver, connection, default_manager, root, args, context, info):
-        return asyncio.async(
-            PeeweeConnectionField.async_connection_resolver(resolver, connection, default_manager, root, args, context, info)
-        )
+        return cls.async_connection_resolver(resolver, connection, default_manager, root, args, context, info)
 
     def get_resolver(self, parent_resolver):
         return partial(self.connection_resolver, parent_resolver, self.type, self.get_manager())
