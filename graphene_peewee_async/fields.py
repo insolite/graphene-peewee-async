@@ -1,7 +1,8 @@
-from functools import partial
+from functools import partial, reduce
 import asyncio
 import peewee
-from peewee import fn, SQL, Clause
+import operator
+from peewee import fn, SQL, Clause, Node, DQ, Expression, deque, ForeignKeyField, FieldProxy, ReverseRelationDescriptor, OP, DJANGO_MAP, ModelAlias
 
 from graphql_relay.connection.arrayconnection import connection_from_list_slice
 from graphene import Field, List, ConnectionField, is_node, Argument, String, Int, PageInfo, Connection
@@ -99,24 +100,98 @@ class PeeweeConnectionField(ConnectionField):
         return field
 
     @classmethod
-    def filter(cls, query, args):
-        if args:
-            query = query.filter(**args)
-        return query
+    def ensure_join(cls, query, lm, rm, on=None, **join_kwargs):
+        ctx = query._query_ctx
+        if isinstance(rm, ModelAlias):
+            rm = rm.model_class
+        for join in query._joins.get(lm, []):
+            dest = join.dest
+            if isinstance(dest, ModelAlias):
+                dest = dest.model_class
+            if dest == rm:
+                return query
+        return query.switch(lm).join(rm, on=on, **join_kwargs).switch(ctx)
+
+    @classmethod
+    def convert_dict_to_node(cls, query, qdict, alias_map={}):
+        accum = []
+        joins = []
+        relationship = (ForeignKeyField, ReverseRelationDescriptor)
+        for key, value in sorted(qdict.items()):
+            curr = query.model_class
+            if '__' in key and key.rsplit('__', 1)[1] in DJANGO_MAP:
+                key, op = key.rsplit('__', 1)
+                op = DJANGO_MAP[op]
+            elif value is None:
+                op = OP.IS
+            else:
+                op = OP.EQ
+            for piece in key.split('__'):
+                model_attr = getattr(curr, piece)
+                if isinstance(model_attr, FieldProxy):
+                    actual_model_attr = model_attr.field_instance
+                else:
+                    actual_model_attr = model_attr
+                if value is not None and isinstance(actual_model_attr, relationship):
+                    curr = model_attr.rel_model
+                    curr = alias_map.get(curr, curr)
+                    joins.append(model_attr)
+            accum.append(Expression(model_attr, op, value))
+        return accum, joins
+
+    @classmethod
+    def filter(cls, query, filters, alias_map={}):
+        # normalize args and kwargs into a new expression
+        # Note: This is a modified peewee's Query.filter method.
+        # Inner methods convert_dict_to_node and ensure_join also changed.
+        # That is done to support FieldProxy generated from aliases to prevent unnecessary joins (see issue link below).
+        # https://github.com/coleifer/peewee/issues/1338
+        if filters:
+            dq_node = Node() & DQ(**filters)
+        else:
+            return query
+
+        # dq_node should now be an Expression, lhs = Node(), rhs = ...
+        q = deque([dq_node])
+        dq_joins = set()
+        while q:
+            curr = q.popleft()
+            if not isinstance(curr, Expression):
+                continue
+            for side, piece in (('lhs', curr.lhs), ('rhs', curr.rhs)):
+                if isinstance(piece, DQ):
+                    new_query, joins = cls.convert_dict_to_node(query, piece.query, alias_map)
+                    dq_joins.update(joins)
+                    expression = reduce(operator.and_, new_query)
+                    # Apply values from the DQ object.
+                    expression._negated = piece._negated
+                    expression._alias = piece._alias
+                    setattr(curr, side, expression)
+                else:
+                    q.append(piece)
+
+        dq_node = dq_node.rhs
+
+        new_query = query.clone()
+        for field in dq_joins:
+            if isinstance(field, (ForeignKeyField, FieldProxy)):
+                lm, rm = field.model_class, field.rel_model
+                field_obj = field
+            elif isinstance(field, ReverseRelationDescriptor):
+                lm, rm = field.field.rel_model, field.rel_model
+                field_obj = field.field
+            new_query = cls.ensure_join(new_query, lm, rm, field_obj)
+        return new_query.where(dq_node)
 
     @classmethod
     def join(cls, query, models, src_model=None):
         src_model = src_model or query.model_class
-        alias_map = {}
-        for model, child_models in models:
-            model_alias = model.alias()
-            alias_map[model] = model_alias
-            query = query.select(model_alias, *query._select)
+        for model, child_models, r_fields in models:
+            query = query.select(*query._select, *r_fields)
             query = query.switch(src_model)
-            query = query.join(model_alias, peewee.JOIN_LEFT_OUTER)  # TODO: on
-            query, inner_alias_map = cls.join(query, child_models, model_alias)
-            alias_map.update(inner_alias_map)
-        return query, alias_map
+            query = query.join(model, peewee.JOIN_LEFT_OUTER)  # TODO: on
+            query = cls.join(query, child_models, model)
+        return query
 
     @classmethod
     def order(cls, model, query, order, alias_map={}):
@@ -148,11 +223,12 @@ class PeeweeConnectionField(ConnectionField):
             order = args.pop(ORDER_BY_FIELD, []) # type._meta.order_by
             page = args.pop(PAGE_FIELD, None) # type._meta.page
             paginate_by = args.pop(PAGINATE_BY_FIELD, None) # type._meta.paginate_by
-            requested_models = get_requested_models(get_fields(info), model)
-            query = model.select(model)
-            query, alias_map = cls.join(query, requested_models)
-            query = cls.filter(query, args)
-            query = cls.order(model, query, order, alias_map)
+            alias_map = {}
+            requested_model, requested_joins, requested_fields = get_requested_models(model, get_fields(info), alias_map)
+            query = requested_model.select(*requested_fields)
+            query = cls.join(query, requested_joins)
+            query = cls.filter(query, args, alias_map)
+            query = cls.order(requested_model, query, order, alias_map)
             query = cls.paginate(query, page, paginate_by)
             query = query.aggregate_rows()
             return query

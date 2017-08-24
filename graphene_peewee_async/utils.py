@@ -169,12 +169,17 @@ def get_filtering_args(model, filters, prefix=''):
     return result
 
 
-def get_requested_models(fields, related_model):
-    if 'edges' in fields.keys():
-        fields = fields['edges']['node']
+def get_requested_models(related_model, field_names, alias_map={}):
+    if 'edges' in field_names.keys():
+        field_names = field_names['edges']['node']
     models = []
-    for key, val in fields.items():
-        if val != {}:
-            child_model = getattr(related_model, key).rel_model
-            models.append((child_model, get_requested_models(val, child_model)))
-    return models
+    fields = []
+    alias = related_model.alias()
+    alias_map[related_model] = alias
+    for key, child_fields in field_names.items():
+        field = getattr(alias, key)
+        if child_fields != {}:
+            child_model = field.rel_model
+            models.append(get_requested_models(child_model, child_fields, alias_map))
+        fields.append(field)
+    return alias, models, fields
