@@ -1,3 +1,5 @@
+graphene>=1.0
 peewee
 peewee_async
 iso8601
+six>=1.10.0
