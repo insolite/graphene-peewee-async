@@ -186,8 +186,8 @@ class PeeweeConnectionField(ConnectionField):
     @classmethod
     def join(cls, query, models, src_model=None):
         src_model = src_model or query.model_class
-        for model, child_models, r_fields in models:
-            query = query.select(*query._select, *r_fields)
+        for model, child_models, requested_fields in models:
+            query = query.select(*(query._select + requested_fields))
             query = query.switch(src_model)
             query = query.join(model, peewee.JOIN_LEFT_OUTER)  # TODO: on
             query = cls.join(query, child_models, model)
@@ -211,9 +211,6 @@ class PeeweeConnectionField(ConnectionField):
     def paginate(cls, query, page, paginate_by):
         if page and paginate_by:
             query = query.paginate(page, paginate_by)
-            total = Clause(fn.Count(SQL('*')),
-                           fn.Over(), glue=' ').alias(TOTAL_FIELD)
-            query._select = tuple(query._select) + (total,)
         return query
 
     @classmethod
@@ -224,12 +221,21 @@ class PeeweeConnectionField(ConnectionField):
             page = args.pop(PAGE_FIELD, None) # type._meta.page
             paginate_by = args.pop(PAGINATE_BY_FIELD, None) # type._meta.paginate_by
             alias_map = {}
-            requested_model, requested_joins, requested_fields = get_requested_models(model, get_fields(info), alias_map)
+            fields = get_fields(info)
+            requested_model, requested_joins, requested_fields = get_requested_models(model, fields, alias_map, info.return_type.fields.keys())
             query = requested_model.select(*requested_fields)
+            if not requested_fields:
+                query._select = ()
             query = cls.join(query, requested_joins)
             query = cls.filter(query, args, alias_map)
             query = cls.order(requested_model, query, order, alias_map)
             query = cls.paginate(query, page, paginate_by)
+            if page and paginate_by or 'total' in fields: # TODO: refactor 'total'
+                total = Clause(fn.Count(SQL('*')),
+                               fn.Over(), glue=' ').alias(TOTAL_FIELD)
+                query._select = tuple(query._select) + (total,)
+            if not query._select:
+                query = query.select(SQL('1')) # bottleneck
             query = query.aggregate_rows()
             return query
         return model
