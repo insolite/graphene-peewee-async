@@ -139,7 +139,7 @@ def get_filtering_args(model, filters, prefix=''):
     for key, val in filters.items():
         field = fields[key]
         is_fkey = isinstance(field, peewee.ForeignKeyField)
-        if is_fkey and model is not field.rel_model:
+        if is_fkey and model is not field.rel_model and not field.deferred:
             extra = get_filtering_args(field.rel_model, val,
                                        '{}{}{}'.format(prefix, key, DELIM))
             result.update(extra)
