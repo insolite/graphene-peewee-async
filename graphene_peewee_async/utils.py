@@ -2,7 +2,6 @@ import inspect
 
 import peewee
 from graphql.utils.ast_to_dict import ast_to_dict
-from graphene import List, Argument
 
 
 DELIM = '__'
@@ -112,61 +111,6 @@ def get_arg_name(prefix, name, lookup):
     return '{}{}'.format(prefix,
                          (name + DELIM + lookup)
                          if lookup else name)
-
-
-def get_filtering_args(model, filters, prefix=''):
-    """ Inspect a model and produce the arguments to pass to
-        a Graphene Field. These arguments will be available to
-        filter against in the GraphQL
-    """
-    from .converter import convert_peewee_field
-
-    all_lookups = list(peewee.DJANGO_MAP.keys())
-    lookup_wrappers = {'in': List}
-
-    fields = {}
-    fields.update(model._meta.fields)
-    # fields.update(get_reverse_fields(model))
-
-    if filters is None:
-        filters = list(fields.keys())
-    if isinstance(filters, (list, tuple)):
-        filters = {key: (None
-                         if isinstance(fields[key], peewee.ForeignKeyField)
-                         else all_lookups) for key in filters}
-
-    result = {}
-    for key, val in filters.items():
-        field = fields[key]
-        is_fkey = isinstance(field, peewee.ForeignKeyField)
-        if is_fkey and model is not field.rel_model and not field.deferred:
-            extra = get_filtering_args(field.rel_model, val,
-                                       '{}{}{}'.format(prefix, key, DELIM))
-            result.update(extra)
-            pk_field = field.rel_model._meta.primary_key
-            for lookup in (all_lookups + ['']):
-                field_name = '{}_{}'.format(key, pk_field.name)
-                argument_name = get_arg_name(prefix, field_name, lookup)
-                graphql_field = convert_peewee_field(pk_field)
-                lookup_wrapper = lookup_wrappers.get(lookup)
-                if lookup_wrapper:
-                    graphql_field = lookup_wrapper(type(graphql_field))
-                    argument = graphql_field.Argument()
-                else:
-                    argument = graphql_field.get_type()().Argument()
-                result[argument_name] = argument
-        elif not is_fkey:
-            for lookup in (val + ['']):
-                argument_name = get_arg_name(prefix, key, lookup)
-                graphql_field = convert_peewee_field(field)
-                lookup_wrapper = lookup_wrappers.get(lookup)
-                if lookup_wrapper:
-                    graphql_field = lookup_wrapper(type(graphql_field))
-                    argument = graphql_field.Argument()
-                else:
-                    argument = graphql_field.get_type()().Argument()
-                result[argument_name] = argument
-    return result
 
 
 def get_requested_models(related_model, field_names, alias_map={}, except_fields=()):

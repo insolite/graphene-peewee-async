@@ -6,13 +6,15 @@ from peewee import fn, SQL, Clause, Node, DQ, Expression, deque, ForeignKeyField
 
 from graphql_relay.connection.arrayconnection import connection_from_list_slice
 from graphene import Field, List, ConnectionField, is_node, Argument, String, Int, PageInfo, Connection
+from graphene.types.generic import GenericScalar
 from graphene.utils.str_converters import to_snake_case
 from .utils import (
-    get_type_for_model, maybe_query, get_fields, get_filtering_args,
+    get_type_for_model, maybe_query, get_fields,
     get_requested_models
 )
 
 
+FILTERS_FIELD = 'filters'
 ORDER_BY_FIELD = 'order_by'
 PAGE_FIELD = 'page'
 PAGINATE_BY_FIELD = 'paginate_by'
@@ -23,22 +25,10 @@ MODELS_DELIMITER = '__'
 
 class PeeweeConnectionField(ConnectionField):
 
-    def __init__(self, type,
-                 filters=None,
-                 # order_by=None,
-                 # page=None, paginate_by=None,
-                 *args, **kwargs):
-        node = type
-        if issubclass(node, Connection):
-            node = node._meta.node
-        filters_args = get_filtering_args(node._meta.model,
-                                          filters or node._meta.filters)
-        # self.order_by = order_by or type._meta.order_by
-        # self.page = page or type._meta.page
-        # self.paginate_by = paginate_by or type._meta.paginate_by
+    def __init__(self, type, *args, **kwargs):
         self.args = {}
-        self.args.update(filters_args)
-        self.args.update({ORDER_BY_FIELD: Argument(List(String)),
+        self.args.update({FILTERS_FIELD: Argument(GenericScalar),
+                          ORDER_BY_FIELD: Argument(List(String)),
                           PAGE_FIELD: Argument(Int),
                           PAGINATE_BY_FIELD: Argument(Int)})
         kwargs.setdefault('args', {})
@@ -216,10 +206,10 @@ class PeeweeConnectionField(ConnectionField):
     @classmethod
     def get_query(cls, model, args, info):
         if isinstance(model, (peewee.Model, peewee.BaseModel)):
-            args = dict(args)
-            order = args.pop(ORDER_BY_FIELD, []) # type._meta.order_by
-            page = args.pop(PAGE_FIELD, None) # type._meta.page
-            paginate_by = args.pop(PAGINATE_BY_FIELD, None) # type._meta.paginate_by
+            filters = args.get(FILTERS_FIELD, {})
+            order = args.get(ORDER_BY_FIELD, []) # type._meta.order_by
+            page = args.get(PAGE_FIELD, None)
+            paginate_by = args.get(PAGINATE_BY_FIELD, None) # type._meta.paginate_by
             alias_map = {}
             fields = get_fields(info)
             requested_model, requested_joins, requested_fields = get_requested_models(model, fields, alias_map, info.return_type.fields.keys())
@@ -227,7 +217,7 @@ class PeeweeConnectionField(ConnectionField):
             if not requested_fields:
                 query._select = ()
             query = cls.join(query, requested_joins)
-            query = cls.filter(query, args, alias_map)
+            query = cls.filter(query, filters, alias_map)
             query = cls.order(requested_model, query, order, alias_map)
             query = cls.paginate(query, page, paginate_by)
             if page and paginate_by or 'total' in fields: # TODO: refactor 'total'
