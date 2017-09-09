@@ -141,8 +141,7 @@ def get_query(model, info, filters={}, order_by=[], page=None, paginate_by=None)
     if isinstance(model, (Model, BaseModel)):
         alias_map = {}
         fields = get_fields(info)
-        requested_model, requested_joins, requested_fields = get_requested_models(model, fields, alias_map,
-                                                                                  info.return_type.fields.keys())
+        requested_model, requested_joins, requested_fields = get_requested_models(model, fields, alias_map)
         query = requested_model.select(*requested_fields)
         if not requested_fields:
             query._select = ()

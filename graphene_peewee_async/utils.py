@@ -103,7 +103,7 @@ def get_arg_name(prefix, name, lookup):
                          if lookup else name)
 
 
-def get_requested_models(related_model, field_names, alias_map={}, except_fields=()):
+def get_requested_models(related_model, field_names, alias_map={}):
     # TODO: This function is full of workarounds like edges/nodes unfold and except_fields. Rewrite ASAP!
     if 'edges' in field_names.keys():
         field_names = field_names['edges']['node']
@@ -112,11 +112,10 @@ def get_requested_models(related_model, field_names, alias_map={}, except_fields
     alias = related_model.alias()
     alias_map[related_model] = alias
     for key, child_fields in field_names.items():
-        if key not in except_fields:
-            field = getattr(alias, key)
-            if not isinstance(field, ReverseRelationDescriptor):
-                if child_fields != {}:
-                    child_model = field.rel_model
-                    models.append(get_requested_models(child_model, child_fields, alias_map))
-                fields.append(field)
+        field = getattr(alias, key)
+        if not isinstance(field, ReverseRelationDescriptor):
+            if child_fields != {}:
+                child_model = field.rel_model
+                models.append(get_requested_models(child_model, child_fields, alias_map))
+            fields.append(field)
     return alias, models, fields
