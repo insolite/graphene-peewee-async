@@ -5,6 +5,7 @@ from graphene import ObjectType, Field
 from graphene.types.objecttype import ObjectTypeOptions
 from graphene.types.utils import yank_fields_from_attrs
 
+from .queries import get_query
 from .registry import Registry, get_global_registry
 from .converter import convert_peewee_field_with_choices, get_foreign_key_id_field
 from .utils import get_reverse_fields, is_valid_peewee_model
@@ -82,7 +83,7 @@ class PeeweeObjectType(ObjectType):
     def async_get_node(cls, info, id):
         model = cls._meta.model
         try:
-            return (yield from model._meta.manager.get(model, id=id))
+            return (yield from model._meta.manager.get(get_query(model, info, filters={'id': id})))
         except model.DoesNotExist:
             return None
 
