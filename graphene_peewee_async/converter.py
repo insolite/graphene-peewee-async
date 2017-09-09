@@ -60,7 +60,7 @@ def convert_field_to_string(field, registry=None):
 @convert_peewee_field.register(peewee.PrimaryKeyField)
 @add_nonnull_to_field
 def convert_field_to_id(field, registry=None):
-    return ID(description=field.help_text, required=True)
+    return Int(description=field.help_text, required=True)
 
 
 @convert_peewee_field.register(peewee.SmallIntegerField)
@@ -99,7 +99,7 @@ def convert_field_to_list_or_connection(field, registry=None):
         _type = registry.get_type_for_model(model)
         if not _type:
             return
-        if is_node(_type):
+        if True: # if is_node(_type): # TODO: Find a way to ckeck that it's a node but without `issubclass(i, Node)` insterfaces check
             # Generate another queries for set until aggregate_rows implemented for peewee-async
             # https://github.com/05bit/peewee-async/issues/10
             connection_meta_class = type('Meta', (), {'node': _type})

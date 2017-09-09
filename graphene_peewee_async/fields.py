@@ -34,6 +34,31 @@ class PeeweeConnection(Connection):
         abstract = True
 
 
+class PeeweeNodeField(Field):
+
+    def __init__(self, type, *args, **kwargs):
+        kwargs.update({
+            'id': Int(required=True),
+            # FILTERS_FIELD: Argument(GenericScalar),
+        })
+        super(PeeweeNodeField, self).__init__(
+            type,
+            *args,
+            **kwargs
+        )
+
+    @asyncio.coroutine
+    def node_resolver(self, resolver, root, info, **args):
+        task = resolver(root, info, **args)
+        if task is None:
+            # filters = args.get(FILTERS_FIELD, {})
+            task = self._type.get_node(info, args['id'])
+        return (yield from task)
+
+    def get_resolver(self, parent_resolver):
+        return super().get_resolver(partial(self.node_resolver, parent_resolver))
+
+
 class PeeweeConnectionField(ConnectionField):
 
     def __init__(self, type, *args, **kwargs):
