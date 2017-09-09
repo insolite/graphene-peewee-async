@@ -4,7 +4,7 @@ from graphene import Enum, Field, ID, Boolean, Float, Int, String, Dynamic, is_n
 from graphene.types.datetime import DateTime
 from graphene.utils.str_converters import to_const
 
-from .fields import PeeweeListField, PeeweeConnectionField
+from .fields import PeeweeListField, PeeweeConnectionField, PeeweeConnection
 from .utils import get_related_model, import_single_dispatch
 
 
@@ -57,21 +57,6 @@ def convert_field_to_string(field, registry=None):
     return String(description=field.help_text)
 
 
-# from graphql.language.ast import (IntValue, StringValue)
-#
-#
-# class IntID(ID):
-#
-#     serialize = int
-#     parse_value = int
-#
-#     @staticmethod
-#     def parse_literal(ast):
-#         if isinstance(ast, (StringValue, IntValue)):
-#             return ast.value
-
-
-
 @convert_peewee_field.register(peewee.PrimaryKeyField)
 @add_nonnull_to_field
 def convert_field_to_id(field, registry=None):
@@ -114,10 +99,14 @@ def convert_field_to_list_or_connection(field, registry=None):
         _type = registry.get_type_for_model(model)
         if not _type:
             return
-
-        # if is_node(_type):
-        #     return PeeweeConnectionField(_type)
-
+        if is_node(_type):
+            # Generate another queries for set until aggregate_rows implemented for peewee-async
+            # https://github.com/05bit/peewee-async/issues/10
+            connection_meta_class = type('Meta', (), {'node': _type})
+            connection_class = type('{}{}Connection'.format(field.field.rel_model.__name__, model.__name__),
+                                    (PeeweeConnection,),
+                                    {connection_meta_class.__name__: connection_meta_class})
+            return PeeweeConnectionField(connection_class)
         return PeeweeListField(_type)
 
     return Dynamic(dynamic_type)
@@ -127,10 +116,11 @@ def convert_field_to_list_or_connection(field, registry=None):
 @add_nonnull_to_field
 def convert_field_to_peeweemodel(field, registry=None):
     model = get_related_model(field)
+
     def dynamic_type():
         _type = registry.get_type_for_model(model)
         if not _type:
             return
-
         return Field(_type, description=field.help_text, required=not field.null)
+
     return Dynamic(dynamic_type)

@@ -59,12 +59,10 @@ class PeeweeConnectionField(ConnectionField):
 
     @asyncio.coroutine
     def query_resolver(self, resolver, root, info, **args):
-        model = resolver(root, info, **args) or self.model
-        return (
-            yield from model._meta.manager.execute(
-                self.get_query(model, args, info)
-            )
-        )
+        query = resolver(root, info, **args)
+        if query is None:
+            query = self.get_query(self.model, args, info)
+        return (yield from self.model._meta.manager.execute(query))
 
     def get_resolver(self, parent_resolver):
         return super().get_resolver(partial(self.query_resolver, parent_resolver))
@@ -214,7 +212,7 @@ class PeeweeConnectionField(ConnectionField):
                 query._select = tuple(query._select) + (total,)
             if not query._select:
                 query = query.select(SQL('1')) # bottleneck
-            query = query.aggregate_rows()
+            # query = query.aggregate_rows()
             return query
         return model
 

@@ -1,6 +1,6 @@
 import inspect
 
-import peewee
+from peewee import Model, ReverseRelationDescriptor
 from graphql.utils.ast_to_dict import ast_to_dict
 
 
@@ -15,7 +15,7 @@ def get_reverse_fields(model):
 
 
 def maybe_query(value):
-    # if isinstance(value, peewee.Query):
+    # if isinstance(value, Query):
     #     return WrappedQuery(value)
     return value
 
@@ -25,7 +25,7 @@ def get_related_model(field):
 
 
 def is_valid_peewee_model(model):
-    return inspect.isclass(model) and issubclass(model, peewee.Model)
+    return inspect.isclass(model) and issubclass(model, Model)
 
 
 def import_single_dispatch():
@@ -114,8 +114,9 @@ def get_requested_models(related_model, field_names, alias_map={}, except_fields
     for key, child_fields in field_names.items():
         if key not in except_fields:
             field = getattr(alias, key)
-            if child_fields != {}:
-                child_model = field.rel_model
-                models.append(get_requested_models(child_model, child_fields, alias_map))
-            fields.append(field)
+            if not isinstance(field, ReverseRelationDescriptor):
+                if child_fields != {}:
+                    child_model = field.rel_model
+                    models.append(get_requested_models(child_model, child_fields, alias_map))
+                fields.append(field)
     return alias, models, fields

@@ -1,8 +1,11 @@
 import re
 import os
 from setuptools import find_packages, setup
+from pip.req import parse_requirements
 
 
+install_reqs = parse_requirements('requirements.txt', session=False)
+requirements = [str(ir.req) for ir in install_reqs]
 package_name = 'graphene_peewee_async'
 hyphen_package_name = package_name.replace('_', '-')
 
@@ -47,12 +50,7 @@ setup(
 
     packages=find_packages(exclude=['tests']),
 
-    install_requires=[
-        'graphene>=2.0',
-        'peewee',
-        'peewee_async',
-        'singledispatch>=3.4.0.3',
-    ],
+    install_requires=requirements,
     setup_requires=[
         'pytest-runner',
     ],
