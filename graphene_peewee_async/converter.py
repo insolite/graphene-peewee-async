@@ -4,7 +4,7 @@ from graphene import Enum, Field, ID, Boolean, Float, Int, String, Dynamic, is_n
 from graphene.types.datetime import DateTime
 from graphene.utils.str_converters import to_const
 
-from.fields import PeeweeListField, PeeweeConnectionField
+from .fields import PeeweeListField, PeeweeConnectionField
 from .utils import get_related_model, import_single_dispatch
 
 
@@ -55,6 +55,21 @@ def convert_peewee_field(field, registry=None):
 @add_nonnull_to_field
 def convert_field_to_string(field, registry=None):
     return String(description=field.help_text)
+
+
+# from graphql.language.ast import (IntValue, StringValue)
+#
+#
+# class IntID(ID):
+#
+#     serialize = int
+#     parse_value = int
+#
+#     @staticmethod
+#     def parse_literal(ast):
+#         if isinstance(ast, (StringValue, IntValue)):
+#             return ast.value
+
 
 
 @convert_peewee_field.register(peewee.PrimaryKeyField)

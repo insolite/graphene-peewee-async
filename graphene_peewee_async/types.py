@@ -1,13 +1,9 @@
 import asyncio
 from collections import OrderedDict
 
-import six
-
 from graphene import ObjectType, Field
-from graphene.types.objecttype import ObjectTypeMeta
-from graphene.types.options import Options
-from graphene.types.utils import merge, yank_fields_from_attrs
-from graphene.utils.is_base_type import is_base_type
+from graphene.types.objecttype import ObjectTypeOptions
+from graphene.types.utils import yank_fields_from_attrs
 
 from .registry import Registry, get_global_registry
 from .converter import convert_peewee_field_with_choices, get_foreign_key_id_field
@@ -18,25 +14,15 @@ def get_foreign_key_field_name(field_name):
     return '{}_id'.format(field_name)
 
 
-def construct_fields(options):
-    only_fields = options.only_fields
-    reverse_fields = get_reverse_fields(options.model)
+def construct_fields(model, registry):
+    reverse_fields = get_reverse_fields(model)
     all_fields = {field.name: field
-                  for field in options.model._meta.declared_fields}
+                  for field in model._meta.declared_fields}
     all_fields.update(reverse_fields)
-    already_created_fields = {f.attname for f in options.local_fields}
 
     fields = OrderedDict()
     for name, field in all_fields.items():
-        is_not_in_only = only_fields and name not in only_fields
-        is_already_created = name in already_created_fields
-        is_excluded = ((name in options.exclude_fields)
-                       or is_already_created)
-        if is_not_in_only or is_excluded:
-            # We skip this field if we specify only_fields and is not
-            # in there. Or when we exclude this field in exclude_fields
-            continue
-        converted_field = convert_peewee_field_with_choices(field, options.registry)
+        converted_field = convert_peewee_field_with_choices(field, registry)
         fields[name] = converted_field
         foreign_field = get_foreign_key_id_field(field)
         if foreign_field:
@@ -44,72 +30,44 @@ def construct_fields(options):
     return fields
 
 
-class PeeweeObjectTypeMeta(ObjectTypeMeta):
+class PeeweeOptions(ObjectTypeOptions):
 
-    @staticmethod
-    def __new__(cls, name, bases, attrs):
-        # Also ensure initialization is only performed for subclasses of
-        if not is_base_type(bases, PeeweeObjectTypeMeta):
-            return type.__new__(cls, name, bases, attrs)
-
-        defaults = dict(
-            name=name,
-            description=attrs.pop('__doc__', None),
-            model=None,
-            local_fields=None,
-            only_fields=(),
-            exclude_fields=(),
-            interfaces=(),
-            filters=None,
-            order_by=None,
-            page=None,
-            paginate_by=None,
-            registry=None
-        )
-
-        options = Options(
-            attrs.pop('Meta', None),
-            **defaults
-        )
-        if not options.registry:
-            options.registry = get_global_registry()
-        assert isinstance(options.registry, Registry), (
-            'The attribute registry in {}.Meta needs to be an instance of '
-            'Registry, received "{}".'
-        ).format(name, options.registry)
-        assert is_valid_peewee_model(options.model), (
-            'You need to pass a valid Peewee Model in {}.Meta, received "{}".'
-        ).format(name, options.model)
-
-        cls = ObjectTypeMeta.__new__(cls, name, bases, dict(attrs, _meta=options))
-
-        options.registry.register(cls)
-
-        options.peewee_fields = yank_fields_from_attrs(
-            construct_fields(options),
-            _as=Field,
-        )
-        options.fields = merge(
-            options.interface_fields,
-            options.peewee_fields,
-            options.base_fields,
-            options.local_fields
-        )
-
-        return cls
+    registry = None
+    model = None
 
 
-class PeeweeObjectType(six.with_metaclass(
-        PeeweeObjectTypeMeta, ObjectType)):
-
-    def resolve_id(self, args, context, info):
-        return self.get_id()
+class PeeweeObjectType(ObjectType):
 
     @classmethod
-    def is_type_of(cls, root, context, info):
-        # if isinstance(root, SimpleLazyObject):
-        #     root._setup()
-        #     root = root._wrapped
+    def __init_subclass_with_meta__(cls, registry=None, model=None, **options):
+        if not registry:
+            registry = get_global_registry()
+        assert isinstance(registry, Registry), (
+            'The attribute registry in {}.Meta needs to be an instance of '
+            'Registry, received "{}".'
+        ).format(cls._meta.name, registry)
+        assert is_valid_peewee_model(model), (
+            'You need to pass a valid Peewee Model in {}.Meta, received "{}".'
+        ).format(cls._meta.name, model)
+        _meta = PeeweeOptions(cls)
+        _meta.registry = registry
+        _meta.model = model
+        _meta.fields = yank_fields_from_attrs(
+            construct_fields(model, registry),
+            _as=Field,
+        )
+
+        super(PeeweeObjectType, cls).__init_subclass_with_meta__(_meta=_meta, **options)
+
+        registry.register(cls)
+        return cls
+
+    @classmethod
+    def resolve_id(cls, root, info, **args):
+        return root.get_id()
+
+    @classmethod
+    def is_type_of(cls, root, info):
         if isinstance(root, cls):
             return True
         if not is_valid_peewee_model(type(root)):
@@ -121,7 +79,7 @@ class PeeweeObjectType(six.with_metaclass(
 
     @classmethod
     @asyncio.coroutine
-    def async_get_node(cls, id, context, info):
+    def async_get_node(cls, info, id):
         model = cls._meta.model
         try:
             return (yield from model._meta.manager.get(model, id=id))
@@ -129,5 +87,5 @@ class PeeweeObjectType(six.with_metaclass(
             return None
 
     @classmethod
-    def get_node(cls, id, context, info):
-        return cls.async_get_node(id, context, info)
+    def get_node(cls, info, id):
+        return cls.async_get_node(info, id)

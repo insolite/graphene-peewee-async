@@ -48,10 +48,9 @@ setup(
     packages=find_packages(exclude=['tests']),
 
     install_requires=[
-        'six>=1.10.0',
-        'graphene>=1.0',
+        'graphene>=2.0',
+        'peewee',
         'peewee_async',
-        'iso8601',
         'singledispatch>=3.4.0.3',
     ],
     setup_requires=[

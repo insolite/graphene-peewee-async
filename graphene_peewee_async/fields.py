@@ -1,17 +1,16 @@
-from functools import partial, reduce
 import asyncio
-import peewee
 import operator
-from peewee import fn, SQL, Clause, Node, DQ, Expression, deque, ForeignKeyField, FieldProxy, ReverseRelationDescriptor, OP, DJANGO_MAP, ModelAlias
+from functools import partial, reduce
 
-from graphql_relay.connection.arrayconnection import connection_from_list_slice
-from graphene import Field, List, ConnectionField, is_node, Argument, String, Int, PageInfo, Connection
+from peewee import (
+    fn, SQL, Clause, Node, DQ, Expression, deque, ForeignKeyField, FieldProxy, ReverseRelationDescriptor,
+    OP, DJANGO_MAP, ModelAlias, JOIN_LEFT_OUTER, Model, BaseModel
+)
+from graphene import Field, List, ConnectionField, is_node, Argument, String, Int, PageInfo, Connection, Context
 from graphene.types.generic import GenericScalar
 from graphene.utils.str_converters import to_snake_case
-from .utils import (
-    get_type_for_model, maybe_query, get_fields,
-    get_requested_models
-)
+
+from .utils import maybe_query, get_fields, get_requested_models
 
 
 FILTERS_FIELD = 'filters'
@@ -23,63 +22,52 @@ DESC_ORDER_CHAR = '-'
 MODELS_DELIMITER = '__'
 
 
+class PeeweeConnection(Connection):
+
+    count = Int()
+    total = Int()
+
+    def resolve_count(self, info, **args):
+        return len(self.edges)
+
+    def resolve_total(self, info, **args):
+        if self.edges:
+            result = getattr(self.edges[0].node, TOTAL_FIELD, None)
+            if result is None:
+                return len(self.edges)
+            return result
+        return 0
+
+    class Meta:
+        abstract = True
+
+
 class PeeweeConnectionField(ConnectionField):
 
     def __init__(self, type, *args, **kwargs):
-        self.args = {}
-        self.args.update({FILTERS_FIELD: Argument(GenericScalar),
-                          ORDER_BY_FIELD: Argument(List(String)),
-                          PAGE_FIELD: Argument(Int),
-                          PAGINATE_BY_FIELD: Argument(Int)})
-        kwargs.setdefault('args', {})
-        kwargs['args'].update(**self.args)
-
-        self.on = kwargs.pop('on', False)
+        kwargs.update({
+            FILTERS_FIELD: Argument(GenericScalar),
+            ORDER_BY_FIELD: Argument(List(String)),
+            PAGE_FIELD: Argument(Int),
+            PAGINATE_BY_FIELD: Argument(Int)
+        })
         super(PeeweeConnectionField, self).__init__(type, *args, **kwargs)
 
     @property
     def model(self):
         return self.type._meta.node._meta.model
 
-    def get_manager(self):
-        if self.on:
-            return getattr(self.model, self.on)
-        else:
-            return self.model
-
-    @classmethod
     @asyncio.coroutine
-    def async_connection_resolver(cls, resolver, connection, default_manager, root, args, context, info):
-        iterable = resolver(root, args, context, info)
-        if iterable is None:
-            iterable = default_manager
-        model = iterable
-        query = cls.get_query(model, args, info)
-        iterable = yield from iterable._meta.manager.execute(query)
-        if False: #isinstance(iterable, QuerySet):
-            _len = iterable.count()
-        else:
-            _len = len(iterable)
-        connection = connection_from_list_slice(
-            iterable,
-            args,
-            slice_start=0,
-            list_length=_len,
-            list_slice_length=_len,
-            connection_type=connection,
-            edge_type=connection.Edge,
-            pageinfo_type=PageInfo,
+    def query_resolver(self, resolver, root, info, **args):
+        model = resolver(root, info, **args) or self.model
+        return (
+            yield from model._meta.manager.execute(
+                self.get_query(model, args, info)
+            )
         )
-        connection.iterable = iterable
-        connection.length = _len
-        return connection
-
-    @classmethod
-    def connection_resolver(cls, resolver, connection, default_manager, root, args, context, info):
-        return cls.async_connection_resolver(resolver, connection, default_manager, root, args, context, info)
 
     def get_resolver(self, parent_resolver):
-        return partial(self.connection_resolver, parent_resolver, self.type, self.get_manager())
+        return super().get_resolver(partial(self.query_resolver, parent_resolver))
 
     @classmethod
     def get_field(cls, model, full_name, alias_map={}):
@@ -179,7 +167,7 @@ class PeeweeConnectionField(ConnectionField):
         for model, child_models, requested_fields in models:
             query = query.select(*(query._select + requested_fields))
             query = query.switch(src_model)
-            query = query.join(model, peewee.JOIN_LEFT_OUTER)  # TODO: on
+            query = query.join(model, JOIN_LEFT_OUTER)  # TODO: on
             query = cls.join(query, child_models, model)
         return query
 
@@ -205,7 +193,7 @@ class PeeweeConnectionField(ConnectionField):
 
     @classmethod
     def get_query(cls, model, args, info):
-        if isinstance(model, (peewee.Model, peewee.BaseModel)):
+        if isinstance(model, (Model, BaseModel)):
             filters = args.get(FILTERS_FIELD, {})
             order = args.get(ORDER_BY_FIELD, []) # type._meta.order_by
             page = args.get(PAGE_FIELD, None)
@@ -241,8 +229,8 @@ class PeeweeListField(Field):
         return self.type.of_type._meta.node._meta.model
 
     @staticmethod
-    def list_resolver(resolver, root, args, context, info):
-        return maybe_query(resolver(root, args, context, info))
+    def list_resolver(resolver, root, info, **args):
+        return maybe_query(resolver(root, info, **args))
 
     def get_resolver(self, parent_resolver):
         return partial(self.list_resolver, parent_resolver)

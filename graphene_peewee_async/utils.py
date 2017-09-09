@@ -7,16 +7,6 @@ from graphql.utils.ast_to_dict import ast_to_dict
 DELIM = '__'
 
 
-def get_type_for_model(schema, model):
-    schema = schema
-    types = schema.types.values()
-    for _type in types:
-        type_model = hasattr(_type, '_meta') and getattr(
-            _type._meta, 'model', None)
-        if model == type_model:
-            return _type
-
-
 def get_reverse_fields(model):
     fields = {}
     for name in model._meta.reverse_rel.keys():
