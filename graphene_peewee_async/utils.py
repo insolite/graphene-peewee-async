@@ -1,7 +1,6 @@
 import inspect
 
 from peewee import Model, ReverseRelationDescriptor
-from graphql.utils.ast_to_dict import ast_to_dict
 
 
 DELIM = '__'
@@ -12,16 +11,6 @@ def get_reverse_fields(model):
     for name in model._meta.reverse_rel.keys():
         fields[name] = getattr(model, name)
     return fields
-
-
-def maybe_query(value):
-    # if isinstance(value, Query):
-    #     return WrappedQuery(value)
-    return value
-
-
-def get_related_model(field):
-    return field.rel_model
 
 
 def is_valid_peewee_model(model):
@@ -51,71 +40,36 @@ def import_single_dispatch():
     return singledispatch
 
 
-def collect_fields(node, fragments):
-    """Recursively collects fields from the AST
-    Args:
-        node (dict): A node in the AST
-        fragments (dict): Fragment definitions
-    Returns:
-        A dict mapping each field found, along with their sub fields.
-        {'name': {},
-         'sentimentsPerLanguage': {'id': {},
-                                   'name': {},
-                                   'totalSentiments': {}},
-         'slug': {}}
-    """
-
-    field = {}
-
-    if node.get('selection_set'):
-        for leaf in node['selection_set']['selections']:
-            if leaf['kind'] == 'Field':
-                field.update({
-                    leaf['name']['value']: collect_fields(leaf, fragments)
-                })
-            elif leaf['kind'] == 'FragmentSpread':
-                field.update(collect_fields(fragments[leaf['name']['value']],
-                                            fragments))
-
-    return field
-
-
-def get_fields(info):
-    """A convenience function to call collect_fields with info
-    Args:
-        info (ResolveInfo)
-    Returns:
-        dict: Returned from collect_fields
-    """
-
-    fragments = {}
-    node = ast_to_dict(info.field_asts[0])
-
-    for name, value in info.fragments.items():
-        fragments[name] = ast_to_dict(value)
-
-    return collect_fields(node, fragments)
-
-
 def get_arg_name(prefix, name, lookup):
     return '{}{}'.format(prefix,
                          (name + DELIM + lookup)
                          if lookup else name)
 
 
-def get_requested_models(related_model, field_names, alias_map={}):
-    # TODO: This function is full of workarounds like edges/nodes unfold and except_fields. Rewrite ASAP!
-    if 'edges' in field_names.keys():
-        field_names = field_names['edges']['node']
+def get_field_from_selections(selections, name):
+    try:
+        return next(field for field in selections if field.name.value == name)
+    except StopIteration:
+        return None
+
+
+def get_requested_models(related_model, selections, alias_map={}):
+
+    # TODO: edges/nodes unfolding below is a workaround, refactor ASAP
+    edges_field = get_field_from_selections(selections, 'edges')
+    if edges_field:
+        selections = edges_field.selection_set.selections[0].selection_set.selections
+
     models = []
     fields = []
     alias = related_model.alias()
     alias_map[related_model] = alias
-    for key, child_fields in field_names.items():
-        field = getattr(alias, key)
+    for f in selections:
+        f_name = f.name.value
+        field = getattr(alias, f_name)
         if not isinstance(field, ReverseRelationDescriptor):
-            if child_fields != {}:
+            if f.selection_set:
                 child_model = field.rel_model
-                models.append(get_requested_models(child_model, child_fields, alias_map))
+                models.append(get_requested_models(child_model, f.selection_set.selections, alias_map))
             fields.append(field)
     return alias, models, fields

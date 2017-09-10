@@ -68,7 +68,7 @@ class PeeweeObjectType(ObjectType):
         return root.get_id()
 
     @classmethod
-    def is_type_of(cls, root, info):
+    def is_type_of(cls, root, info, **args):
         if isinstance(root, cls):
             return True
         if not is_valid_peewee_model(type(root)):

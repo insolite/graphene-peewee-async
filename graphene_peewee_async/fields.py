@@ -5,7 +5,6 @@ from graphene import Field, List, ConnectionField, Argument, String, Int, Connec
 from graphene.types.generic import GenericScalar
 
 from .queries import get_query, TOTAL_FIELD
-from .utils import maybe_query
 
 
 FILTERS_FIELD = 'filters'
@@ -93,14 +92,3 @@ class PeeweeListField(Field):
 
     def __init__(self, _type, *args, **kwargs):
         super(PeeweeListField, self).__init__(List(_type), *args, **kwargs)
-
-    @property
-    def model(self):
-        return self.type.of_type._meta.node._meta.model
-
-    @staticmethod
-    def list_resolver(resolver, root, info, **args):
-        return maybe_query(resolver(root, info, **args))
-
-    def get_resolver(self, parent_resolver):
-        return partial(self.list_resolver, parent_resolver)

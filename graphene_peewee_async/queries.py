@@ -7,7 +7,7 @@ from peewee import (
 )
 from graphene.utils.str_converters import to_snake_case
 
-from .utils import get_fields, get_requested_models
+from .utils import get_requested_models, get_field_from_selections
 
 
 TOTAL_FIELD = '__total__'
@@ -140,8 +140,8 @@ def paginate(query, page, paginate_by):
 def get_query(model, info, filters={}, order_by=[], page=None, paginate_by=None):
     if isinstance(model, (Model, BaseModel)):
         alias_map = {}
-        fields = get_fields(info)
-        requested_model, requested_joins, requested_fields = get_requested_models(model, fields, alias_map)
+        selections = next(field for field in info.field_asts if field.name.value == info.field_name).selection_set.selections
+        requested_model, requested_joins, requested_fields = get_requested_models(model, selections, alias_map)
         query = requested_model.select(*requested_fields)
         if not requested_fields:
             query._select = ()
@@ -149,7 +149,7 @@ def get_query(model, info, filters={}, order_by=[], page=None, paginate_by=None)
         query = filter(query, filters, alias_map)
         query = order(requested_model, query, order_by, alias_map)
         query = paginate(query, page, paginate_by)
-        if page and paginate_by or 'total' in fields:  # TODO: refactor 'total'
+        if page and paginate_by or get_field_from_selections(selections, 'total'):  # TODO: refactor 'total'
             total = Clause(fn.Count(SQL('*')),
                            fn.Over(), glue=' ').alias(TOTAL_FIELD)
             query._select = tuple(query._select) + (total,)

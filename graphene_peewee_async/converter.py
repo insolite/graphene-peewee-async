@@ -5,7 +5,7 @@ from graphene.types.datetime import DateTime
 from graphene.utils.str_converters import to_const
 
 from .fields import PeeweeListField, PeeweeConnectionField, PeeweeConnection
-from .utils import get_related_model, import_single_dispatch
+from .utils import import_single_dispatch
 
 
 singledispatch = import_single_dispatch()
@@ -73,7 +73,7 @@ def convert_field_to_int(field, registry=None):
 
 
 @convert_peewee_field.register(peewee.BooleanField)
-def convert_field_to_nullboolean(field, registry=None):
+def convert_field_to_boolean(field, registry=None):
     return Boolean(description=field.help_text)
 
 
@@ -93,7 +93,7 @@ def convert_date_to_string(field, registry=None):
 
 @convert_peewee_field.register(peewee.ReverseRelationDescriptor)
 def convert_field_to_list_or_connection(field, registry=None):
-    model = get_related_model(field)
+    model = field.rel_model
 
     def dynamic_type():
         _type = registry.get_type_for_model(model)
@@ -115,7 +115,7 @@ def convert_field_to_list_or_connection(field, registry=None):
 @convert_peewee_field.register(peewee.ForeignKeyField)
 @add_nonnull_to_field
 def convert_field_to_peeweemodel(field, registry=None):
-    model = get_related_model(field)
+    model = field.rel_model
 
     def dynamic_type():
         _type = registry.get_type_for_model(model)
