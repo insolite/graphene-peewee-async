@@ -59,6 +59,8 @@ def get_requested_models(related_model, selections, alias_map={}):
     edges_field = get_field_from_selections(selections, 'edges')
     if edges_field:
         selections = edges_field.selection_set.selections[0].selection_set.selections
+    elif get_field_from_selections(selections, 'total') or get_field_from_selections(selections, 'count'):
+        selections = []
 
     models = []
     fields = []
