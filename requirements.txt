@@ -1,4 +1,4 @@
-graphene>=2.0.dev20170802065539
+graphene>=2.0
 peewee
 peewee_async
 singledispatch>=3.4.0.3
