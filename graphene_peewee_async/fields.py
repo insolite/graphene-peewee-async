@@ -11,7 +11,6 @@ FILTERS_FIELD = 'filters'
 ORDER_BY_FIELD = 'order_by'
 PAGE_FIELD = 'page'
 PAGINATE_BY_FIELD = 'paginate_by'
-NAIVE_TOTAL_FIELD = 'naive_total'
 
 
 class PeeweeConnection(Connection):
@@ -67,7 +66,6 @@ class PeeweeConnectionField(ConnectionField):
             ORDER_BY_FIELD: Argument(List(String)),
             PAGE_FIELD: Argument(Int),
             PAGINATE_BY_FIELD: Argument(Int),
-            NAIVE_TOTAL_FIELD: Argument(Boolean),
         })
         super(PeeweeConnectionField, self).__init__(type, *args, **kwargs)
 
@@ -83,9 +81,8 @@ class PeeweeConnectionField(ConnectionField):
             order_by = args.get(ORDER_BY_FIELD, [])
             page = args.get(PAGE_FIELD, None)
             paginate_by = args.get(PAGINATE_BY_FIELD, None)
-            naive_total = args.get(NAIVE_TOTAL_FIELD, False)
             query = get_query(self.model, info, filters=filters, order_by=order_by,
-                              page=page, paginate_by=paginate_by, naive_total=naive_total)
+                              page=page, paginate_by=paginate_by)
         return (yield from self.model._meta.manager.execute(query))
 
     def get_resolver(self, parent_resolver):

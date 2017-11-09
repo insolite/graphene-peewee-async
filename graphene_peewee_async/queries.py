@@ -137,13 +137,7 @@ def paginate(query, page, paginate_by):
     return query
 
 
-class pg_stat_all_tables(Model):
-
-    n_live_tup = IntegerField()
-    relname = CharField()
-
-
-def get_query(model, info, filters={}, order_by=[], page=None, paginate_by=None, naive_total=False):
+def get_query(model, info, filters={}, order_by=[], page=None, paginate_by=None, total_query=None):
     if isinstance(model, (Model, BaseModel)):
         alias_map = {}
         selections = next(field for field in info.field_asts if field.name.value == info.field_name).selection_set.selections
@@ -156,9 +150,8 @@ def get_query(model, info, filters={}, order_by=[], page=None, paginate_by=None,
         query = order(requested_model, query, order_by, alias_map)
         query = paginate(query, page, paginate_by)
         if page and paginate_by or get_field_from_selections(selections, 'total'):  # TODO: refactor 'total'
-            if naive_total:
-                total = Clause(pg_stat_all_tables.select(pg_stat_all_tables.n_live_tup)
-                               .where(pg_stat_all_tables.relname == requested_model._meta.db_table)).alias(TOTAL_FIELD)
+            if total_query:
+                total = Clause(total_query).alias(TOTAL_FIELD)
             else:
                 total = Clause(fn.Count(SQL('*')),
                                fn.Over(), glue=' ').alias(TOTAL_FIELD)
