@@ -1,7 +1,7 @@
 import asyncio
 from functools import partial
 
-from graphene import Field, List, ConnectionField, Argument, String, Int, Connection, Boolean
+from graphene import Field, List, ConnectionField, Argument, String, Int, Connection
 from graphene.types.generic import GenericScalar
 
 from .queries import get_query, TOTAL_FIELD
@@ -36,8 +36,9 @@ class PeeweeConnection(Connection):
 class PeeweeNodeField(Field):
 
     def __init__(self, type, *args, **kwargs):
+        self.primary_key_name = type._meta.model._meta.primary_key.name
         kwargs.update({
-            'id': Int(required=True),
+            self.primary_key_name: Int(), # required=True
             # FILTERS_FIELD: Argument(GenericScalar),
         })
         super(PeeweeNodeField, self).__init__(
@@ -48,11 +49,11 @@ class PeeweeNodeField(Field):
 
     @asyncio.coroutine
     def node_resolver(self, resolver, root, info, **args):
-        task = resolver(root, info, **args)
-        if task is None:
+        query = resolver(root, info, **args)
+        if query is None:
             # filters = args.get(FILTERS_FIELD, {})
-            task = self._type.get_node(info, args['id'])
-        return (yield from task)
+            query = yield from self._type.get_node(info, args[self.primary_key_name])
+        return query
 
     def get_resolver(self, parent_resolver):
         return super().get_resolver(partial(self.node_resolver, parent_resolver))
@@ -73,6 +74,10 @@ class PeeweeConnectionField(ConnectionField):
     def model(self):
         return self.type._meta.node._meta.model
 
+    @property
+    def manager(self):
+        return self.type._meta.node._meta.manager
+
     @asyncio.coroutine
     def query_resolver(self, resolver, root, info, **args):
         query = resolver(root, info, **args)
@@ -83,7 +88,8 @@ class PeeweeConnectionField(ConnectionField):
             paginate_by = args.get(PAGINATE_BY_FIELD, None)
             query = get_query(self.model, info, filters=filters, order_by=order_by,
                               page=page, paginate_by=paginate_by)
-        return (yield from self.model._meta.manager.execute(query))
+            query = (yield from self.manager.execute(query))
+        return query
 
     def get_resolver(self, parent_resolver):
         return super().get_resolver(partial(self.query_resolver, parent_resolver))

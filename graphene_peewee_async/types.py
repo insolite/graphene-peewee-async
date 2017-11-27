@@ -1,7 +1,8 @@
 import asyncio
 from collections import OrderedDict
 
-from graphene import ObjectType, Field
+from peewee_async import Manager
+from graphene import ObjectType, Field, Mutation
 from graphene.types.objecttype import ObjectTypeOptions
 from graphene.types.utils import yank_fields_from_attrs
 
@@ -11,8 +12,8 @@ from .converter import convert_peewee_field_with_choices, get_foreign_key_id_fie
 from .utils import get_reverse_fields, is_valid_peewee_model
 
 
-def get_foreign_key_field_name(field_name):
-    return '{}_id'.format(field_name)
+def get_foreign_key_field_name(from_field_name, to_field_name):
+    return '{}_{}'.format(from_field_name, to_field_name)
 
 
 def construct_fields(model, registry):
@@ -27,7 +28,7 @@ def construct_fields(model, registry):
         fields[name] = converted_field
         foreign_field = get_foreign_key_id_field(field)
         if foreign_field:
-            fields[get_foreign_key_field_name(field.name)] = foreign_field
+            fields[get_foreign_key_field_name(field.name, field.to_field.name)] = foreign_field
     return fields
 
 
@@ -35,12 +36,13 @@ class PeeweeOptions(ObjectTypeOptions):
 
     registry = None
     model = None
+    manager = None
 
 
 class PeeweeObjectType(ObjectType):
 
     @classmethod
-    def __init_subclass_with_meta__(cls, registry=None, model=None, **options):
+    def __init_subclass_with_meta__(cls, registry=None, model=None, manager=None, **options):
         if not registry:
             registry = get_global_registry()
         assert isinstance(registry, Registry), (
@@ -50,9 +52,13 @@ class PeeweeObjectType(ObjectType):
         assert is_valid_peewee_model(model), (
             'You need to pass a valid Peewee Model in {}.Meta, received "{}".'
         ).format(cls._meta.name, model)
+        assert isinstance(manager, Manager), (
+            'You need to pass a valid Peewee Manager in {}.Meta, received "{}".'
+        ).format(cls._meta.name, manager)
         _meta = PeeweeOptions(cls)
         _meta.registry = registry
         _meta.model = model
+        _meta.manager = manager
         _meta.fields = yank_fields_from_attrs(
             construct_fields(model, registry),
             _as=Field,
@@ -80,13 +86,35 @@ class PeeweeObjectType(ObjectType):
 
     @classmethod
     @asyncio.coroutine
-    def async_get_node(cls, info, id):
+    def async_get_node(cls, info, pk_value):
         model = cls._meta.model
+        pk_field_name = model._meta.primary_key.name
         try:
-            return (yield from model._meta.manager.get(get_query(model, info, filters={'id': id})))
+            # TODO: pass as plain int (use `prepare_filters` inside)
+            return (yield from cls._meta.manager.get(get_query(model, info, filters={pk_field_name: pk_value}))) # TODO: pk name
         except model.DoesNotExist:
             return None
 
     @classmethod
-    def get_node(cls, info, id):
-        return cls.async_get_node(info, id)
+    def get_node(cls, info, pk_value):
+        return cls.async_get_node(info, pk_value)
+
+
+class PeeweeMutation(Mutation):
+
+    @classmethod
+    def __init_subclass_with_meta__(cls, model=None, manager=None, **options):
+        assert is_valid_peewee_model(model), (
+            'You need to pass a valid Peewee Model in {}.Meta, received "{}".'
+        ).format(cls._meta.name, model)
+        assert isinstance(manager, Manager), (
+            'You need to pass a valid Peewee Manager in {}.Meta, received "{}".'
+        ).format(cls._meta.name, manager)
+        _meta = PeeweeOptions(cls)
+        _meta.model = model
+        _meta.manager = manager
+        super(PeeweeMutation, cls).__init_subclass_with_meta__(_meta=_meta, **options)
+        return cls
+
+    class Meta:
+        abstract = True
