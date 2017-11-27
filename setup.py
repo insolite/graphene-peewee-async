@@ -5,7 +5,9 @@ from pip.req import parse_requirements
 
 
 install_reqs = parse_requirements('requirements.txt', session=False)
+tests_reqs = parse_requirements('tests-requirements.txt', session=False)
 requirements = [str(ir.req) for ir in install_reqs]
+tests_requirements = [str(ir.req) for ir in tests_reqs]
 package_name = 'graphene_peewee_async'
 hyphen_package_name = package_name.replace('_', '-')
 
@@ -51,13 +53,7 @@ setup(
     packages=find_packages(exclude=['tests']),
 
     install_requires=requirements,
-    setup_requires=[
-        'pytest-runner',
-    ],
-    tests_require=[
-        'pytest',
-        'mock',
-    ],
+    tests_require=tests_requirements,
     include_package_data=True,
     zip_safe=False,
     platforms='any',
