@@ -185,8 +185,8 @@ class CreateOneMutation(BaseMutation):
     def mutate(cls, instance, info, **args):
         model = cls._meta.model
         manager = cls._meta.manager
-        obj = yield from manager.create(model, **args)
         plain_data, related_data = split_data(model, args)
+        obj = yield from manager.create(model, **plain_data)
         yield from cls.set_related([obj], related_data)
         return cls(**{AFFECTED_FIELD: obj})
 
@@ -213,17 +213,22 @@ class CreateManyMutation(BaseMutation):
         if isinstance(data, dict):
             data = [data]
         # TODO: detect if PKs returning is requested or required by `set_related`
+        plain_data_list = []
+        related_data_list = []
+        for obj in data:
+            plain_data, related_data = split_data(model, obj)
+            plain_data_list.append(plain_data)
+            related_data_list.append(related_data)
         inserted_pks = yield from manager.execute(
-            model.insert_many(data).return_id_list()
+            model.insert_many(plain_data_list).return_id_list()
         )
         inserted_objects = []
         for i, inserted_pk in enumerate(inserted_pks):
-            model_data = dict(data[i])
+            model_data = dict(plain_data_list[i])
             model_data[model._meta.primary_key.name] = inserted_pk
-            inserted_objects.append(model(**model_data))
-        for index, obj in enumerate(data):
-            plain_data, related_data = split_data(model, obj)
-            yield from cls.set_related([inserted_objects[index]], related_data)
+            obj = model(**model_data)
+            inserted_objects.append(obj)
+            yield from cls.set_related([obj], related_data_list[i])
         return cls(**{AFFECTED_FIELD: inserted_objects})
 
     class Meta:
