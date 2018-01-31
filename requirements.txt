@@ -1,5 +1,5 @@
 graphene>=2.0
-peewee
+peewee==2.10.2
 peewee_async
 singledispatch>=3.4.0.3
 iso8601
