@@ -1,7 +1,8 @@
 import peewee
 from playhouse import postgres_ext
 
-from graphene import Enum, Field, ID, Boolean, Float, Int, String, Dynamic, is_node, List, JSONString
+from graphene import Enum, Field, ID, Boolean, Float, Int, String, Dynamic, is_node, List
+from graphene.types.generic import GenericScalar
 from graphene.types.datetime import DateTime
 from graphene.utils.str_converters import to_const
 
@@ -137,4 +138,4 @@ def convert_field_to_array(field, registry=None):
 @convert_peewee_field.register(postgres_ext.JSONField)
 @convert_peewee_field.register(postgres_ext.BinaryJSONField)
 def convert_field_to_json(field, registry=None):
-    return JSONString(description=field.help_text)
+    return GenericScalar(description=field.help_text)
