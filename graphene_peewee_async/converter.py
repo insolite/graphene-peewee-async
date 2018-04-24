@@ -28,12 +28,13 @@ def get_foreign_key_id_field(field):
 
 
 def convert_peewee_field_with_choices(field, registry=None):
-    choices = getattr(field, 'choices', None)
-    if choices:
-        meta = field.model_class._meta
-        name = '{}_{}'.format(meta.name, field.name)
-        graphql_choices = list(convert_choices(choices))
-        return Enum(name.upper(), graphql_choices, description=field.help_text)
+    # TODO: Fix choices in a good way. See https://github.com/insolite/graphene-peewee-async/issues/5
+    # choices = getattr(field, 'choices', None)
+    # if choices:
+    #     meta = field.model_class._meta
+    #     name = '{}_{}'.format(meta.name, field.name)
+    #     graphql_choices = list(convert_choices(choices))
+    #     return Enum(name.upper(), graphql_choices, description=field.help_text)()
     return convert_peewee_field(field, registry)
 
 
