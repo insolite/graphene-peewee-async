@@ -1,2 +1,1 @@
 recursive-include graphene_peewee_async *.py
-include *requirements.txt
