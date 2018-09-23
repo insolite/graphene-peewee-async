@@ -3,7 +3,7 @@ from functools import reduce
 
 from peewee import (
     fn, SQL, Clause, Node, DQ, Expression, deque, ForeignKeyField, FieldProxy, ReverseRelationDescriptor,
-    OP, DJANGO_MAP, ModelAlias, JOIN_LEFT_OUTER, Model, BaseModel, IntegerField, CharField
+    OP, DJANGO_MAP, ModelAlias, JOIN_LEFT_OUTER, Model, BaseModel, IntegerField, CharField, Query
 )
 from graphene.utils.str_converters import to_snake_case
 
@@ -138,11 +138,16 @@ def paginate(query, page, paginate_by):
 
 
 def get_query(model, info, filters={}, order_by=[], page=None, paginate_by=None, total_query=None):
+    query = None
+    if isinstance(model, Query):
+        query = model
+        model = query.model_class
     if isinstance(model, (Model, BaseModel)):
         alias_map = {}
         selections = next(field for field in info.field_asts if field.name.value == info.field_name).selection_set.selections
         requested_model, requested_joins, requested_fields = get_requested_models(model, selections, alias_map)
-        query = requested_model.select(*requested_fields)
+        if query is None:
+            query = requested_model.select(*requested_fields)
         if not requested_fields:
             query._select = ()
         query = join(query, requested_joins)

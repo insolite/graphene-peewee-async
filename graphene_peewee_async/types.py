@@ -91,7 +91,7 @@ class PeeweeObjectType(ObjectType):
         pk_field_name = model._meta.primary_key.name
         try:
             # TODO: pass as plain int (use `prepare_filters` inside)
-            return (yield from cls._meta.manager.get(get_query(model, info, filters={pk_field_name: pk_value}))) # TODO: pk name
+            return (yield from cls._meta.manager.get(get_query(model, info, filters={pk_field_name: pk_value})))
         except model.DoesNotExist:
             return None
 

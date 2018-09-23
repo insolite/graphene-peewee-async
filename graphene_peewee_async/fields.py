@@ -3,6 +3,7 @@ from functools import partial
 
 from graphene import Field, List, ConnectionField, Argument, String, Int, Connection
 from graphene.types.generic import GenericScalar
+from peewee import Query
 
 from .queries import get_query, TOTAL_FIELD
 
@@ -81,12 +82,14 @@ class PeeweeConnectionField(ConnectionField):
     @asyncio.coroutine
     def query_resolver(self, resolver, root, info, **args):
         query = resolver(root, info, **args)
-        if query is None:
+        if query is None or isinstance(query, Query):
+            if query is None:
+                query = self.model
             filters = args.get(FILTERS_FIELD, {})
             order_by = args.get(ORDER_BY_FIELD, [])
             page = args.get(PAGE_FIELD, None)
             paginate_by = args.get(PAGINATE_BY_FIELD, None)
-            query = get_query(self.model, info, filters=filters, order_by=order_by,
+            query = get_query(query, info, filters=filters, order_by=order_by,
                               page=page, paginate_by=paginate_by)
             query = (yield from self.manager.execute(query))
         return query
