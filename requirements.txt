@@ -5,8 +5,8 @@ graphql-core==2.0
 graphql-relay==0.4.5
 inflection==0.3.1
 iso8601==0.1.12
-peewee==2.10.2
-peewee-async==0.5.12
+peewee==3.8.0
+peewee-async==0.6.0a0
 promise==2.1
 psycopg2==2.7.4
 Rx==1.6.1

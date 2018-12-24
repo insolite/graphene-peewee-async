@@ -38,7 +38,6 @@ setup(
         'Intended Audience :: Developers',
         'Topic :: Software Development :: Libraries',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.4',
         'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: Implementation :: PyPy',
     ],
@@ -49,8 +48,8 @@ setup(
 
     install_requires=[
         'graphene>=2.0',
-        'peewee>=2.10,<3',
-        'peewee_async>=0.5',
+        'peewee>=3.1.0',
+        'peewee_async>=0.6.0a0',
         'singledispatch>=3.4',
         'iso8601>=0.1',
     ],

@@ -7,7 +7,7 @@ from peewee import (
 from peewee_async import PooledPostgresqlDatabase
 
 
-db = PooledPostgresqlDatabase('graphene_test', user='postgres', host='localhost')
+db = PooledPostgresqlDatabase('uta', user='chiaki', host='localhost')
 
 
 class BaseModel(Model):

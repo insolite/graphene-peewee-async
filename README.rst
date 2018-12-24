@@ -4,6 +4,9 @@ graphene-peewee-async
 
 `graphene <https://github.com/graphql-python/graphene>`_ + `peewee-async <https://github.com/05bit/peewee-async>`_ integration :heart:
 
+peewee 3 support branch
+
+require: python >= 3.5 & peewee >= 3.1.0 & peewee-async >=0.6.0a0
 
 Features
 ========
@@ -19,6 +22,7 @@ Features
     - Update
     - Delete
     - Clone
+
 
 Usage sample
 ============

@@ -19,7 +19,7 @@ def get_foreign_key_field_name(from_field_name, to_field_name):
 def construct_fields(model, registry):
     reverse_fields = get_reverse_fields(model)
     all_fields = {field.name: field
-                  for field in model._meta.declared_fields}
+                  for field in model._meta.sorted_fields}
     all_fields.update(reverse_fields)
 
     fields = OrderedDict()
@@ -28,7 +28,7 @@ def construct_fields(model, registry):
         fields[name] = converted_field
         foreign_field = get_foreign_key_id_field(field)
         if foreign_field:
-            fields[get_foreign_key_field_name(field.name, field.to_field.name)] = foreign_field
+            fields[get_foreign_key_field_name(field.name, field.rel_field.name)] = foreign_field
     return fields
 
 
@@ -81,7 +81,7 @@ class PeeweeObjectType(ObjectType):
             raise Exception((
                 'Received incompatible instance "{}".'
             ).format(root))
-        model = root._meta.model_class
+        model = root._meta.model
         return model == cls._meta.model
 
     @classmethod

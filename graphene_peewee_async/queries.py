@@ -1,9 +1,11 @@
 import operator
+from collections import deque
 from functools import reduce
 
 from peewee import (
-    fn, SQL, Clause, Node, DQ, Expression, deque, ForeignKeyField, FieldProxy, ReverseRelationDescriptor,
-    OP, DJANGO_MAP, ModelAlias, JOIN_LEFT_OUTER, Model, BaseModel, IntegerField, CharField, Query
+    fn, SQL, NodeList, Node, DQ, Expression, ForeignKeyField, FieldAlias, BackrefAccessor,
+    OP, DJANGO_MAP, ModelAlias, JOIN, Model, ModelBase, IntegerField, CharField,
+    Query, Join
 )
 from graphene.utils.str_converters import to_snake_case
 
@@ -24,13 +26,15 @@ def get_field(model, full_name, alias_map={}):
 
 
 def ensure_join(query, lm, rm, on=None, **join_kwargs):
-    ctx = query._query_ctx
+    ctx = query._join_ctx
     if isinstance(rm, ModelAlias):
-        rm = rm.model_class
-    for join in query._joins.get(lm, []):
-        dest = join.dest
+        rm = rm.model
+    for join in query._from_list:
+        if not isinstance(join, Join): # noqa: fix something for mutation
+            continue
+        dest = join.rhs
         if isinstance(dest, ModelAlias):
-            dest = dest.model_class
+            dest = dest.model
         if dest == rm:
             return query
     return query.switch(lm).join(rm, on=on, **join_kwargs).switch(ctx)
@@ -39,9 +43,9 @@ def ensure_join(query, lm, rm, on=None, **join_kwargs):
 def convert_dict_to_node(query, qdict, alias_map={}):
     accum = []
     joins = []
-    relationship = (ForeignKeyField, ReverseRelationDescriptor)
+    relationship = (ForeignKeyField, BackrefAccessor)
     for key, value in sorted(qdict.items()):
-        curr = query.model_class
+        curr = query.model
         if '__' in key and key.rsplit('__', 1)[1] in DJANGO_MAP:
             key, op = key.rsplit('__', 1)
             op = DJANGO_MAP[op]
@@ -51,8 +55,8 @@ def convert_dict_to_node(query, qdict, alias_map={}):
             op = OP.EQ
         for piece in key.split('__'):
             model_attr = getattr(curr, piece)
-            if isinstance(model_attr, FieldProxy):
-                actual_model_attr = model_attr.field_instance
+            if isinstance(model_attr, FieldAlias):
+                actual_model_attr = model_attr.field
             else:
                 actual_model_attr = model_attr
             if value is not None and isinstance(actual_model_attr, relationship):
@@ -88,7 +92,7 @@ def filter(query, filters, alias_map={}):
                 expression = reduce(operator.and_, new_query)
                 # Apply values from the DQ object.
                 expression._negated = piece._negated
-                expression._alias = piece._alias
+                expression._alias = piece.alias
                 setattr(curr, side, expression)
             else:
                 q.append(piece)
@@ -97,10 +101,10 @@ def filter(query, filters, alias_map={}):
 
     new_query = query.clone()
     for field in dq_joins:
-        if isinstance(field, (ForeignKeyField, FieldProxy)):
-            lm, rm = field.model_class, field.rel_model
+        if isinstance(field, (ForeignKeyField, FieldAlias)):
+            lm, rm = field.model, field.rel_model
             field_obj = field
-        elif isinstance(field, ReverseRelationDescriptor):
+        elif isinstance(field, BackrefAccessor):
             lm, rm = field.field.rel_model, field.rel_model
             field_obj = field.field
         new_query = ensure_join(new_query, lm, rm, field_obj)
@@ -108,11 +112,11 @@ def filter(query, filters, alias_map={}):
 
 
 def join(query, models, src_model=None):
-    src_model = src_model or query.model_class
+    src_model = src_model or query.model
     for model, child_models, requested_fields in models:
-        query = query.select(*(query._select + requested_fields))
+        query = query.select(*(query._returning + requested_fields))
         query = query.switch(src_model)
-        query = query.join(model, JOIN_LEFT_OUTER)  # TODO: on
+        query = query.join(model, JOIN.LEFT_OUTER)  # TODO: on
         query = join(query, child_models, model)
     return query
 
@@ -141,27 +145,26 @@ def get_query(model, info, filters={}, order_by=[], page=None, paginate_by=None,
     query = None
     if isinstance(model, Query):
         query = model
-        model = query.model_class
-    if isinstance(model, (Model, BaseModel)):
+        model = query.objects().model
+    if isinstance(model, (Model, ModelBase)):
         alias_map = {}
         selections = next(field for field in info.field_asts if field.name.value == info.field_name).selection_set.selections
         requested_model, requested_joins, requested_fields = get_requested_models(model, selections, alias_map)
         if query is None:
             query = requested_model.select(*requested_fields)
         if not requested_fields:
-            query._select = ()
+            query._returning = ()
         query = join(query, requested_joins)
         query = filter(query, filters, alias_map)
         query = order(requested_model, query, order_by, alias_map)
         query = paginate(query, page, paginate_by)
         if page and paginate_by or get_field_from_selections(selections, 'total'):  # TODO: refactor 'total'
             if total_query:
-                total = Clause(total_query).alias(TOTAL_FIELD)
+                total = NodeList([total_query]).alias(TOTAL_FIELD)
             else:
-                total = Clause(fn.Count(SQL('*')),
-                               fn.Over(), glue=' ').alias(TOTAL_FIELD)
-            query._select = tuple(query._select) + (total,)
-        if not query._select:
+                total = NodeList([fn.Count(SQL('*')), fn.Over()], glue=' ').alias(TOTAL_FIELD)
+            query._returning = tuple(query._returning) + (total,)
+        if not query._returning:
             query = query.select(SQL('1'))  # bottleneck
         # query = query.aggregate_rows()
         return query

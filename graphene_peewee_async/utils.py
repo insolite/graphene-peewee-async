@@ -1,6 +1,6 @@
 import inspect
 
-from peewee import Model, ReverseRelationDescriptor
+from peewee import Model, BackrefAccessor, ForeignKeyField
 
 
 DELIM = '__'
@@ -8,8 +8,11 @@ DELIM = '__'
 
 def get_reverse_fields(model):
     fields = {}
-    for name in model._meta.reverse_rel.keys():
-        fields[name] = getattr(model, name)
+    for name in model._meta.backrefs.keys():
+        if isinstance(name, ForeignKeyField):
+            fields[name.backref] = getattr(model, name.backref)
+        else:
+            fields[name] = getattr(model, name)
     return fields
 
 
@@ -69,7 +72,7 @@ def get_requested_models(related_model, selections, alias_map={}):
     for f in selections:
         f_name = f.name.value
         field = getattr(alias, f_name)
-        if not isinstance(field, ReverseRelationDescriptor):
+        if not isinstance(field, BackrefAccessor):
             if f.selection_set:
                 child_model = field.rel_model
                 models.append(get_requested_models(child_model, f.selection_set.selections, alias_map))

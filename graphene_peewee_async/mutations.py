@@ -1,6 +1,6 @@
 import asyncio
 
-from peewee import ForeignKeyField, SQL, Clause
+from peewee import ForeignKeyField, SQL, NodeList
 from playhouse.shortcuts import model_to_dict
 from graphene import Int, Dynamic, NonNull
 from graphene.types.generic import GenericScalar
@@ -19,7 +19,7 @@ AFFECTED_FIELD = 'affected'
 
 def prepare_filters(query, filters):
     if isinstance(filters, int):
-        filters = {query.model_class._meta.primary_key.name: filters}
+        filters = {query.model._meta.primary_key.name: filters}
     return filters
 
 
@@ -27,7 +27,8 @@ def filter_query(query, filters):
     if filters is not None:
         # filters = prepare_filters(query, filters)
         if isinstance(filters, dict) and filters:
-            query = query.filter(**filters)
+            from .queries import filter
+            query = filter(query, filters)
             # elif isinstance(filters, (list, tuple)):
             #     query = query.where(self.get_condition(filters))
     return query
@@ -47,7 +48,7 @@ def filter_query_with_subqueries(query, filters):
     """ For queries that does not support joining """
     plain_filters = {}
     subquery_filters = {}
-    model = query.model_class
+    model = query.model
     filters = prepare_filters(query, filters)
     for key, val in filters.items():
         if is_filter_deep(model, key):
@@ -59,10 +60,10 @@ def filter_query_with_subqueries(query, filters):
     for key, val in subquery_filters.items():
         field = getattr(model, key)
         rel_model = field.rel_model
-        query = query.where(Clause(
+        query = query.where(NodeList([
             SQL('EXISTS'),
             rel_model.select(SQL('1')).filter(**val).where(field == rel_model._meta.primary_key)
-        ))
+        ]))
     return query
 
 
@@ -71,7 +72,7 @@ def arguments_from_fields(fields, model):
     arguments = {}
     for name, field in fields.items():
         if isinstance(field, PeeweeModelField):
-            if name in model._meta.reverse_rel:
+            if name in model._meta.backrefs:
                 arg = GenericScalar().Argument()
             else:
                 arg = Int().Argument()
@@ -90,7 +91,7 @@ def split_data(model, data):
     plain_data = {}
     related_data = {}
     for key, val in data.items():
-        dst = related_data if key in model._meta.reverse_rel else plain_data
+        dst = related_data if key in model._meta.backrefs else plain_data
         dst[key] = val
     return plain_data, related_data
 
@@ -135,11 +136,11 @@ class BaseMutation(PeeweeMutation):
     def clone_entity_tree(cls, obj, fields=[], new_data={}):
         # TODO: Simplify clone args (`fields` variable)
         manager = cls._meta.manager
-        model_class = obj._meta.model_class
+        model_class = obj._meta.model
         pk_field = model_class._meta.primary_key
         data = model_to_dict(obj, recurse=False)
         data.pop(pk_field.name)
-        env = {pk_field.name: obj._get_pk_value()}
+        env = {pk_field.name: obj._pk}
         new_data = new_data.copy()
         child_data = {}
         for key, val in tuple(new_data.items()):
@@ -157,10 +158,13 @@ class BaseMutation(PeeweeMutation):
                 for key, val in field.items():
                     field = key
                     child_fields = val
-            fkey = model_class._meta.reverse_rel[field]
+            for key in model_class._meta.backrefs:
+                if key.backref == field:
+                    fkey = key
+                    break
             set_query = getattr(obj, field)
             rel_objs = yield from manager.execute(set_query)
-            child_new_data = {fkey.name: new_obj._get_pk_value()}
+            child_new_data = {fkey.name: new_obj._pk}
             child_new_data.update(child_data.get(field, {}))
             for rel_obj in rel_objs:
                 yield from cls.clone_entity_tree(rel_obj, child_fields, child_new_data)
@@ -219,9 +223,44 @@ class CreateManyMutation(BaseMutation):
             plain_data, related_data = split_data(model, obj)
             plain_data_list.append(plain_data)
             related_data_list.append(related_data)
+
+        cls._return_id_list = True
+        # ======
+        import peewee_async
+        import peewee
+        import copy
+        async def insert(query):
+            """patch insert to return id list"""
+            assert isinstance(query, peewee.Insert), \
+                ("Error, trying to run insert coroutine"
+                 "with wrong query class %s" % str(query))
+
+            cursor = await peewee_async._execute_query_async(query)
+
+            try:
+                if query._returning:
+                    if hasattr(cls, '_return_id_list'):
+                        result = map(lambda x: x[0], (await cursor.fetchall()))
+                    else:
+                        row = await cursor.fetchone()
+                        result = row[0]
+                else:
+                    database = peewee_async._query_db(query)
+                    last_id = await database.last_insert_id_async(cursor)
+                    result = last_id
+            finally:
+                await cursor.release()
+
+            return result
+
+        _origin_insert = copy.deepcopy(peewee_async.insert)
+        peewee_async.insert = insert
         inserted_pks = yield from manager.execute(
-            model.insert_many(plain_data_list).return_id_list()
+            model.insert_many(plain_data_list).returning(model._meta.get_primary_keys())
         )
+        del cls._return_id_list
+        peewee_async.insert = _origin_insert
+
         inserted_objects = []
         for i, inserted_pk in enumerate(inserted_pks):
             model_data = dict(plain_data_list[i])
@@ -311,7 +350,7 @@ class DeleteOneMutation(BaseMutation):
     @classmethod
     def generate(cls, node_class, connection_class, arguments={}, returns={}):
         pk_field_name = node_class._meta.model._meta.primary_key.name
-        args = {pk_field_name: node_class._meta.fields[pk_field_name].type.Argument()}
+        args = {pk_field_name: node_class._meta.fields[pk_field_name].type().Argument()}
         args.update(arguments)
         attrs = {AFFECTED_FIELD: PeeweeNodeField(node_class)}
         attrs.update(returns)
@@ -365,7 +404,7 @@ class CloneOneMutation(BaseMutation):
     @classmethod
     def generate(cls, node_class, connection_class, arguments={}, returns={}):
         pk_field_name = node_class._meta.model._meta.primary_key.name
-        args = {pk_field_name: node_class._meta.fields[pk_field_name].type.Argument(),
+        args = {pk_field_name: node_class._meta.fields[pk_field_name].type().Argument(),
                 RELATED_FIELD: GenericScalar(),
                 DATA_FIELD: GenericScalar()}
         args.update(arguments)
