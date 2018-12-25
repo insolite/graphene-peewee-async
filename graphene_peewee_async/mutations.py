@@ -25,12 +25,8 @@ def prepare_filters(query, filters):
 
 def filter_query(query, filters):
     if filters is not None:
-        # filters = prepare_filters(query, filters)
         if isinstance(filters, dict) and filters:
-            from .queries import filter
             query = filter(query, filters)
-            # elif isinstance(filters, (list, tuple)):
-            #     query = query.where(self.get_condition(filters))
     return query
 
 
@@ -72,17 +68,20 @@ def arguments_from_fields(fields, model):
     arguments = {}
     for name, field in fields.items():
         if isinstance(field, PeeweeModelField):
-            if name in model._meta.backrefs:
-                arg = GenericScalar().Argument()
+            for backrefs in model._meta.backrefs:
+                if name == backrefs.backref:
+                    arg = GenericScalar().Argument()
+                    break
             else:
                 arg = Int().Argument()
         elif isinstance(field.type, type):
             arg = field.type().Argument()
         else:
+            # Fix: test not covered, will raise error
             if isinstance(field.type, NonNull):
                 arg = field.type.of_type().Argument()
             else:
-                arg = field.type.Argument()
+                arg = field.type().Argument()
         arguments[name] = arg
     return arguments
 
@@ -225,7 +224,6 @@ class CreateManyMutation(BaseMutation):
             related_data_list.append(related_data)
 
         cls._return_id_list = True
-        # ======
         import peewee_async
         import peewee
         import copy
