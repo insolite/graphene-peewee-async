@@ -1,4 +1,3 @@
-import asyncio
 from collections import OrderedDict
 
 from peewee_async import Manager

@@ -1,6 +1,6 @@
 import inspect
 
-from peewee import Model, BackrefAccessor, ForeignKeyField
+from peewee import Model, BackrefAccessor
 
 
 DELIM = '__'
@@ -8,11 +8,8 @@ DELIM = '__'
 
 def get_reverse_fields(model):
     fields = {}
-    for name in model._meta.backrefs.keys():
-        if isinstance(name, ForeignKeyField):
-            fields[name.backref] = getattr(model, name.backref)
-        else:
-            fields[name] = getattr(model, name)
+    for backref in model._meta.backrefs.keys():
+        fields[backref.backref] = getattr(model, backref.backref)
     return fields
 
 

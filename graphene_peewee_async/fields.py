@@ -1,4 +1,3 @@
-import asyncio
 from functools import partial
 
 from graphene import Field, List, ConnectionField, Argument, String, Int, Connection

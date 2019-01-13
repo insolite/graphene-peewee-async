@@ -1,6 +1,5 @@
 import peewee
 from playhouse import postgres_ext
-
 from graphene import Enum, Field, ID, Boolean, Float, Int, String, Dynamic, is_node, List
 from graphene.types.generic import GenericScalar
 from graphene.types.datetime import DateTime
@@ -31,7 +30,7 @@ def convert_peewee_field_with_choices(field, registry=None):
     # TODO: Fix choices in a good way. See https://github.com/insolite/graphene-peewee-async/issues/5
     # choices = getattr(field, 'choices', None)
     # if choices:
-    #     meta = field.model_class._meta
+    #     meta = field.model._meta
     #     name = '{}_{}'.format(meta.name, field.name)
     #     graphql_choices = list(convert_choices(choices))
     #     return Enum(name.upper(), graphql_choices, description=field.help_text)()
@@ -60,7 +59,7 @@ def convert_field_to_string(field, registry=None):
     return String(description=field.help_text)
 
 
-@convert_peewee_field.register(peewee.PrimaryKeyField)
+@convert_peewee_field.register(peewee.AutoField)
 @add_nonnull_to_field
 def convert_field_to_id(field, registry=None):
     return Int(description=field.help_text, required=True)

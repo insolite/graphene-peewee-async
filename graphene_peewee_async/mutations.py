@@ -1,5 +1,3 @@
-import asyncio
-
 from peewee_async import _execute_query_async
 from peewee import ForeignKeyField, SQL, NodeList
 from playhouse.shortcuts import model_to_dict
@@ -16,6 +14,23 @@ FILTERS_FIELD = 'filters'
 DATA_FIELD = 'data'
 RELATED_FIELD = 'related'
 AFFECTED_FIELD = 'affected'
+
+
+async def execute_returning_many(manager, query):
+    # Perform raw querying until https://github.com/05bit/peewee-async/issues/118 fixed
+    # After fixing this function should be removed and all its calls
+    # should be replaced with direct `manager.execute(query)` calls
+    manager._swap_database(query)
+    cursor = await _execute_query_async(query)
+    try:
+        result = await cursor.fetchall()
+    finally:
+        await cursor.release()
+    return result
+
+
+def get_backref_by_name(model, name):
+    return next((backref for backref in model._meta.backrefs if backref.backref == name), None)
 
 
 def prepare_filters(query, filters):
@@ -69,20 +84,14 @@ def arguments_from_fields(fields, model):
     arguments = {}
     for name, field in fields.items():
         if isinstance(field, PeeweeModelField):
-            for backrefs in model._meta.backrefs:
-                if name == backrefs.backref:
-                    arg = GenericScalar().Argument()
-                    break
+            if get_backref_by_name(model, name):
+                arg = GenericScalar().Argument()
             else:
                 arg = Int().Argument()
-        elif isinstance(field.type, type):
-            arg = field.type().Argument()
+        elif isinstance(field.type, NonNull):
+            arg = field.type.of_type().Argument()
         else:
-            # Fix: test not covered, will raise error
-            if isinstance(field.type, NonNull):
-                arg = field.type.of_type().Argument()
-            else:
-                arg = field.type().Argument()
+            arg = field.type().Argument() # TODO: get rid of strange `NotNull is not callable` warning
         arguments[name] = arg
     return arguments
 
@@ -91,7 +100,7 @@ def split_data(model, data):
     plain_data = {}
     related_data = {}
     for key, val in data.items():
-        dst = related_data if key in model._meta.backrefs else plain_data
+        dst = related_data if get_backref_by_name(model, key) else plain_data
         dst[key] = val
     return plain_data, related_data
 
@@ -116,7 +125,7 @@ class BaseMutation(PeeweeMutation):
             field = getattr(model, set_field_name)
             related_model = field.rel_model
             related_field = field.field
-            obj_pks = [obj if isinstance(obj, int) else obj._get_pk_value() for obj in objs]
+            obj_pks = [obj if isinstance(obj, int) else obj._pk for obj in objs]
             delete_query = (related_model.delete()
                             .where(related_field.in_(obj_pks)))
             await manager.execute(delete_query)
@@ -128,14 +137,17 @@ class BaseMutation(PeeweeMutation):
                     final_related_obj[related_field.name] = obj_pk
                     final_related_data.append(final_related_obj)
             if final_related_data:
-                await manager.execute(related_model.insert_many(final_related_data).return_id_list())
+                await execute_returning_many(
+                    manager,
+                    related_model.insert_many(final_related_data).returning(related_model._meta.get_primary_keys())
+                )
 
     @classmethod
     async def clone_entity_tree(cls, obj, fields=[], new_data={}):
         # TODO: Simplify clone args (`fields` variable)
         manager = cls._meta.manager
-        model_class = obj._meta.model
-        pk_field = model_class._meta.primary_key
+        model = obj._meta.model
+        pk_field = model._meta.primary_key
         data = model_to_dict(obj, recurse=False)
         data.pop(pk_field.name)
         env = {pk_field.name: obj._pk}
@@ -149,17 +161,14 @@ class BaseMutation(PeeweeMutation):
             elif isinstance(val, list):
                 new_data[key] = ''.join(val).format(**env)
         data.update(new_data)
-        new_obj = await manager.create(model_class, **data)
+        new_obj = await manager.create(model, **data)
         for field in fields:
             child_fields = []
             if isinstance(field, dict):
                 for key, val in field.items():
                     field = key
                     child_fields = val
-            for key in model_class._meta.backrefs:
-                if key.backref == field:
-                    fkey = key
-                    break
+            fkey = get_backref_by_name(model, field)
             set_query = getattr(obj, field)
             rel_objs = await manager.execute(set_query)
             child_new_data = {fkey.name: new_obj._pk}
@@ -224,14 +233,10 @@ class CreateManyMutation(BaseMutation):
             plain_data_list.append(plain_data)
             related_data_list.append(related_data)
 
-        # Perform raw querying until https://github.com/05bit/peewee-async/issues/118 fixed
-        query = model.insert_many(plain_data_list).returning(model._meta.get_primary_keys())
-        manager._swap_database(query)
-        cursor = await _execute_query_async(query)
-        try:
-            rows = await cursor.fetchall()
-        finally:
-            cursor.release()
+        rows = await execute_returning_many(
+            manager,
+            model.insert_many(plain_data_list).returning(model._meta.get_primary_keys())
+        )
 
         inserted_pks = map(lambda row: row[0], rows)
         inserted_objects = []
@@ -321,7 +326,7 @@ class DeleteOneMutation(BaseMutation):
     @classmethod
     def generate(cls, node_class, connection_class, arguments={}, returns={}):
         pk_field_name = node_class._meta.model._meta.primary_key.name
-        args = {pk_field_name: node_class._meta.fields[pk_field_name].type().Argument()}
+        args = {pk_field_name: node_class._meta.fields[pk_field_name].type.Argument()}
         args.update(arguments)
         attrs = {AFFECTED_FIELD: PeeweeNodeField(node_class)}
         attrs.update(returns)
@@ -360,7 +365,7 @@ class DeleteManyMutation(BaseMutation):
         filters = args.get(FILTERS_FIELD)
         query = model.delete()
         query = filter_query_with_subqueries(query, filters)
-        # TODO: Add .return_id_list() when it will be supported
+        # TODO: Add .returning() when it will be supported
         total = await manager.execute(query)
         return cls(**{AFFECTED_FIELD: [model() for _ in range(total)]})
 
@@ -373,7 +378,7 @@ class CloneOneMutation(BaseMutation):
     @classmethod
     def generate(cls, node_class, connection_class, arguments={}, returns={}):
         pk_field_name = node_class._meta.model._meta.primary_key.name
-        args = {pk_field_name: node_class._meta.fields[pk_field_name].type().Argument(),
+        args = {pk_field_name: node_class._meta.fields[pk_field_name].type.Argument(),
                 RELATED_FIELD: GenericScalar(),
                 DATA_FIELD: GenericScalar()}
         args.update(arguments)
