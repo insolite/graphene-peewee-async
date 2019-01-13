@@ -85,13 +85,12 @@ class PeeweeObjectType(ObjectType):
         return model == cls._meta.model
 
     @classmethod
-    @asyncio.coroutine
-    def async_get_node(cls, info, pk_value):
+    async def async_get_node(cls, info, pk_value):
         model = cls._meta.model
         pk_field_name = model._meta.primary_key.name
         try:
             # TODO: pass as plain int (use `prepare_filters` inside)
-            return (yield from cls._meta.manager.get(get_query(model, info, filters={pk_field_name: pk_value})))
+            return (await cls._meta.manager.get(get_query(model, info, filters={pk_field_name: pk_value})))
         except model.DoesNotExist:
             return None
 

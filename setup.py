@@ -55,7 +55,7 @@ setup(
     ],
     tests_require=[
         'inflection>=0.13',
-        'aiopg>=0.3',
+        'aiopg>=0.15.0',
     ],
     include_package_data=True,
     zip_safe=False,

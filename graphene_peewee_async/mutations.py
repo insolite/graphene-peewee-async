@@ -1,5 +1,6 @@
 import asyncio
 
+from peewee_async import _execute_query_async
 from peewee import ForeignKeyField, SQL, NodeList
 from playhouse.shortcuts import model_to_dict
 from graphene import Int, Dynamic, NonNull
@@ -108,8 +109,7 @@ class BaseMutation(PeeweeMutation):
         return type('{}{}'.format(node_class.__name__, cls.__name__), (cls,), attrs)
 
     @classmethod
-    @asyncio.coroutine
-    def set_related(cls, objs, related_data):
+    async def set_related(cls, objs, related_data):
         model = cls._meta.model
         manager = cls._meta.manager
         for set_field_name, related_objs in related_data.items():
@@ -119,7 +119,7 @@ class BaseMutation(PeeweeMutation):
             obj_pks = [obj if isinstance(obj, int) else obj._get_pk_value() for obj in objs]
             delete_query = (related_model.delete()
                             .where(related_field.in_(obj_pks)))
-            yield from manager.execute(delete_query)
+            await manager.execute(delete_query)
             final_related_data = []
             for obj_pk in obj_pks:
                 for related_obj in related_objs:
@@ -128,11 +128,10 @@ class BaseMutation(PeeweeMutation):
                     final_related_obj[related_field.name] = obj_pk
                     final_related_data.append(final_related_obj)
             if final_related_data:
-                yield from manager.execute(related_model.insert_many(final_related_data).return_id_list())
+                await manager.execute(related_model.insert_many(final_related_data).return_id_list())
 
     @classmethod
-    @asyncio.coroutine
-    def clone_entity_tree(cls, obj, fields=[], new_data={}):
+    async def clone_entity_tree(cls, obj, fields=[], new_data={}):
         # TODO: Simplify clone args (`fields` variable)
         manager = cls._meta.manager
         model_class = obj._meta.model
@@ -150,7 +149,7 @@ class BaseMutation(PeeweeMutation):
             elif isinstance(val, list):
                 new_data[key] = ''.join(val).format(**env)
         data.update(new_data)
-        new_obj = yield from manager.create(model_class, **data)
+        new_obj = await manager.create(model_class, **data)
         for field in fields:
             child_fields = []
             if isinstance(field, dict):
@@ -162,11 +161,11 @@ class BaseMutation(PeeweeMutation):
                     fkey = key
                     break
             set_query = getattr(obj, field)
-            rel_objs = yield from manager.execute(set_query)
+            rel_objs = await manager.execute(set_query)
             child_new_data = {fkey.name: new_obj._pk}
             child_new_data.update(child_data.get(field, {}))
             for rel_obj in rel_objs:
-                yield from cls.clone_entity_tree(rel_obj, child_fields, child_new_data)
+                await cls.clone_entity_tree(rel_obj, child_fields, child_new_data)
         return new_obj
 
     class Meta:
@@ -184,13 +183,12 @@ class CreateOneMutation(BaseMutation):
         return super().generate(node_class, connection_class, args, attrs)
 
     @classmethod
-    @asyncio.coroutine
-    def mutate(cls, instance, info, **args):
+    async def mutate(cls, instance, info, **args):
         model = cls._meta.model
         manager = cls._meta.manager
         plain_data, related_data = split_data(model, args)
-        obj = yield from manager.create(model, **plain_data)
-        yield from cls.set_related([obj], related_data)
+        obj = await manager.create(model, **plain_data)
+        await cls.set_related([obj], related_data)
         return cls(**{AFFECTED_FIELD: obj})
 
     class Meta:
@@ -208,8 +206,11 @@ class CreateManyMutation(BaseMutation):
         return super().generate(node_class, connection_class, args, attrs)
 
     @classmethod
-    @asyncio.coroutine
-    def mutate(cls, instance, info, **args):
+    async def last_insert_id_async(cls, cursor):
+        return await cursor.fetchall()
+
+    @classmethod
+    async def mutate(cls, instance, info, **args):
         model = cls._meta.model
         manager = cls._meta.manager
         data = args.get(DATA_FIELD, [])
@@ -223,49 +224,23 @@ class CreateManyMutation(BaseMutation):
             plain_data_list.append(plain_data)
             related_data_list.append(related_data)
 
-        cls._return_id_list = True
-        import peewee_async
-        import peewee
-        import copy
-        async def insert(query):
-            """patch insert to return id list"""
-            assert isinstance(query, peewee.Insert), \
-                ("Error, trying to run insert coroutine"
-                 "with wrong query class %s" % str(query))
+        # Perform raw querying until https://github.com/05bit/peewee-async/issues/118 fixed
+        query = model.insert_many(plain_data_list).returning(model._meta.get_primary_keys())
+        manager._swap_database(query)
+        cursor = await _execute_query_async(query)
+        try:
+            rows = await cursor.fetchall()
+        finally:
+            cursor.release()
 
-            cursor = await peewee_async._execute_query_async(query)
-
-            try:
-                if query._returning:
-                    if hasattr(cls, '_return_id_list'):
-                        result = map(lambda x: x[0], (await cursor.fetchall()))
-                    else:
-                        row = await cursor.fetchone()
-                        result = row[0]
-                else:
-                    database = peewee_async._query_db(query)
-                    last_id = await database.last_insert_id_async(cursor)
-                    result = last_id
-            finally:
-                await cursor.release()
-
-            return result
-
-        _origin_insert = copy.deepcopy(peewee_async.insert)
-        peewee_async.insert = insert
-        inserted_pks = yield from manager.execute(
-            model.insert_many(plain_data_list).returning(model._meta.get_primary_keys())
-        )
-        del cls._return_id_list
-        peewee_async.insert = _origin_insert
-
+        inserted_pks = map(lambda row: row[0], rows)
         inserted_objects = []
         for i, inserted_pk in enumerate(inserted_pks):
             model_data = dict(plain_data_list[i])
             model_data[model._meta.primary_key.name] = inserted_pk
             obj = model(**model_data)
             inserted_objects.append(obj)
-            yield from cls.set_related([obj], related_data_list[i])
+            await cls.set_related([obj], related_data_list[i])
         return cls(**{AFFECTED_FIELD: inserted_objects})
 
     class Meta:
@@ -283,8 +258,7 @@ class UpdateOneMutation(BaseMutation):
         return super().generate(node_class, connection_class, args, attrs)
 
     @classmethod
-    @asyncio.coroutine
-    def mutate(cls, instance, info, **args):
+    async def mutate(cls, instance, info, **args):
         model = cls._meta.model
         manager = cls._meta.manager
         args_copy = args.copy()
@@ -294,10 +268,10 @@ class UpdateOneMutation(BaseMutation):
         if plain_data:
             query = model.update(**plain_data)
             query = filter_query_with_subqueries(query, {pk_field.name: pk_value})
-            yield from manager.execute(query)
+            await manager.execute(query)
         # TODO: check if it is requested
-        obj = yield from manager.get(model, **{pk_field.name: pk_value})
-        yield from cls.set_related([obj], related_data)
+        obj = await manager.get(model, **{pk_field.name: pk_value})
+        await cls.set_related([obj], related_data)
         return cls(**{AFFECTED_FIELD: obj})
 
     class Meta:
@@ -315,8 +289,7 @@ class UpdateManyMutation(BaseMutation):
         return super().generate(node_class, connection_class, args, attrs)
 
     @classmethod
-    @asyncio.coroutine
-    def mutate(cls, instance, info, **args):
+    async def mutate(cls, instance, info, **args):
         model = cls._meta.model
         manager = cls._meta.manager
         data = args.get(DATA_FIELD, {})
@@ -325,17 +298,17 @@ class UpdateManyMutation(BaseMutation):
         if plain_data:
             query = model.update(**plain_data)
             query = filter_query_with_subqueries(query, filters)
-            total = yield from manager.execute(query)
+            total = await manager.execute(query)
         else:
             total = None
         # FIXME: After update select results could be different cause changed data could interfere with filters
         # TODO: check if it is requested
         select_query = model.select()
         select_query = filter(select_query, filters)
-        result = yield from manager.execute(select_query)
+        result = await manager.execute(select_query)
         if total is None:
             total = len(result)
-        yield from cls.set_related(result, related_data)
+        await cls.set_related(result, related_data)
         # TODO: Seems like list conversion was fixed in peewee>=0.5.10, check it out
         return cls(**{AFFECTED_FIELD: result})
 
@@ -355,8 +328,7 @@ class DeleteOneMutation(BaseMutation):
         return super().generate(node_class, connection_class, args, attrs)
 
     @classmethod
-    @asyncio.coroutine
-    def mutate(cls, instance, info, **args):
+    async def mutate(cls, instance, info, **args):
         model = cls._meta.model
         manager = cls._meta.manager
         pk_field = model._meta.primary_key
@@ -364,7 +336,7 @@ class DeleteOneMutation(BaseMutation):
         assert pk_value is not None
         query = model.delete()
         query = filter_query_with_subqueries(query, {pk_field.name: pk_value})
-        yield from manager.execute(query)
+        await manager.execute(query)
         return cls(**{AFFECTED_FIELD: model(**{pk_field.name: pk_value})})
 
     class Meta:
@@ -382,15 +354,14 @@ class DeleteManyMutation(BaseMutation):
         return super().generate(node_class, connection_class, args, attrs)
 
     @classmethod
-    @asyncio.coroutine
-    def mutate(cls, instance, info, **args):
+    async def mutate(cls, instance, info, **args):
         model = cls._meta.model
         manager = cls._meta.manager
         filters = args.get(FILTERS_FIELD)
         query = model.delete()
         query = filter_query_with_subqueries(query, filters)
         # TODO: Add .return_id_list() when it will be supported
-        total = yield from manager.execute(query)
+        total = await manager.execute(query)
         return cls(**{AFFECTED_FIELD: [model() for _ in range(total)]})
 
     class Meta:
@@ -411,16 +382,15 @@ class CloneOneMutation(BaseMutation):
         return super().generate(node_class, connection_class, args, attrs)
 
     @classmethod
-    @asyncio.coroutine
-    def mutate(cls, instance, info, **args):
+    async def mutate(cls, instance, info, **args):
         model = cls._meta.model
         manager = cls._meta.manager
         pk_field = model._meta.primary_key
         pk_value = args.get(pk_field.name)
         related = args.get(RELATED_FIELD, [])
         data = args.get(DATA_FIELD, {})
-        obj = yield from manager.get(model, **{pk_field.name: pk_value})
-        new_obj = yield from cls.clone_entity_tree(obj, related, data)
+        obj = await manager.get(model, **{pk_field.name: pk_value})
+        new_obj = await cls.clone_entity_tree(obj, related, data)
         return cls(**{AFFECTED_FIELD: new_obj})
 
     class Meta:

@@ -27,8 +27,7 @@ class ApiTest(BaseTest):
             self.manager.execute(Author.delete())
         )
 
-    @asyncio.coroutine
-    def query(self, query, variables={}):
+    async def query(self, query, variables={}):
         pre_result = self.schema.execute(
             query,
             variable_values=variables,
@@ -38,7 +37,7 @@ class ApiTest(BaseTest):
         if isinstance(pre_result, ExecutionResult):
             result = pre_result
         else:
-            result = yield from pre_result
+            result = await pre_result
         # TODO: better way to convert OrderedDict to simple dict
         dumped_data = json.dumps(result.data)
         result.data = json.loads(dumped_data)

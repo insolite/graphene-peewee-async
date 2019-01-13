@@ -48,12 +48,11 @@ class PeeweeNodeField(Field):
             **kwargs
         )
 
-    @asyncio.coroutine
-    def node_resolver(self, resolver, root, info, **args):
+    async def node_resolver(self, resolver, root, info, **args):
         query = resolver(root, info, **args)
         if query is None:
             # filters = args.get(FILTERS_FIELD, {})
-            query = yield from self._type.get_node(info, args[self.primary_key_name])
+            query = await self._type.get_node(info, args[self.primary_key_name])
         return query
 
     def get_resolver(self, parent_resolver):
@@ -79,8 +78,7 @@ class PeeweeConnectionField(ConnectionField):
     def manager(self):
         return self.type._meta.node._meta.manager
 
-    @asyncio.coroutine
-    def query_resolver(self, resolver, root, info, **args):
+    async def query_resolver(self, resolver, root, info, **args):
         query = resolver(root, info, **args)
         if query is None or isinstance(query, Query):
             if query is None:
@@ -91,7 +89,7 @@ class PeeweeConnectionField(ConnectionField):
             paginate_by = args.get(PAGINATE_BY_FIELD, None)
             query = get_query(query, info, filters=filters, order_by=order_by,
                               page=page, paginate_by=paginate_by)
-            query = (yield from self.manager.execute(query))
+            query = (await self.manager.execute(query))
         return query
 
     def get_resolver(self, parent_resolver):
