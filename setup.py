@@ -53,10 +53,11 @@ setup(
         'peewee_async>=0.5',
         'singledispatch>=3.4',
         'iso8601>=0.1',
+        'promise<2.2.1', # https://github.com/insolite/graphene-peewee-async/issues/11
     ],
     tests_require=[
         'inflection>=0.13',
-        'aiopg>=0.3',
+        'aiopg>=0.15.0',
     ],
     include_package_data=True,
     zip_safe=False,

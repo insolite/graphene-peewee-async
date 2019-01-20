@@ -1,4 +1,4 @@
-aiopg==0.13.2
+aiopg==0.15.0
 aniso8601==3.0.0
 graphene==2.1
 graphql-core==2.0
