@@ -53,6 +53,9 @@ class TestQuery(ApiTest):
         book2 = self.loop.run_until_complete(
             self.manager.create(Book, name='bar2', year=2001, author=author)
         )
+        self.loop.run_until_complete(
+            self.manager.create(Book, name='bar3', year=2003, author=author)
+        )
 
         result = self.loop.run_until_complete(self.query('''
             query {
@@ -60,7 +63,9 @@ class TestQuery(ApiTest):
                     filters: {
                         author__rating: ''' + str(author.rating) + '''
                     },
-                    order_by: ["-author__name", "year"]
+                    order_by: ["-author__name", "year"],
+                    page: 1,
+                    paginate_by: 2
                 ) {
                     total
                     count
@@ -86,7 +91,7 @@ class TestQuery(ApiTest):
             {
                 'books': {
                     'count': 2,
-                    'total': 2,
+                    'total': 3,
                     'edges': [{
                         'node': {
                             'id': book2.id,
