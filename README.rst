@@ -4,6 +4,7 @@ graphene-peewee-async
 
 `graphene <https://github.com/graphql-python/graphene>`_ + `peewee-async <https://github.com/05bit/peewee-async>`_ integration :heart:
 
+`Changelog <https://github.com/insolite/graphene-peewee-async/blob/master/CHANGELOG.md>`_
 
 Features
 ========

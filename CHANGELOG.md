@@ -31,7 +31,7 @@
 
 **Backward-incompatible changes**
 
- * [#12] Stop support of `peewee<3` and `Python<3.5`
+ * [[#12](https://github.com/insolite/graphene-peewee-async/issues/12)] Stop support of `peewee<3` and `Python<3.5`
    in order to support `peewee>=3`.
    This also requires `peewee-async>=0.6.0a0`
    to work with `peewee>=3`.
@@ -40,7 +40,7 @@
 
 **Bugfixes**
 
- * [#11]
+ * [[#11](https://github.com/insolite/graphene-peewee-async/issues/11)]
    Restrict `promise` dependency version at `<2.2.1`
    as it breaks compatibility with Python 3.4.
  * [[7d5e8c](https://github.com/insolite/graphene-peewee-async/commit/379f77728787401dd6486811cacb4e85b47d5e8c#diff-498cf53d35427897613cdfc4b76fc6eaR5)]
@@ -63,7 +63,7 @@
 
 **Bugfixes**
 
- * [#7 #8 #9]
+ * [[#8](https://github.com/insolite/graphene-peewee-async/issues/8)]
    Fix Pip 10 compatibility issues (stop using `requirements.txt`).
 
 ### TODO: decribe releases for this period
