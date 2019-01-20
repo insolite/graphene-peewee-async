@@ -1,6 +1,5 @@
 import peewee
 from playhouse import postgres_ext
-
 from graphene import Enum, Field, ID, Boolean, Float, Int, String, Dynamic, is_node, List
 from graphene.types.generic import GenericScalar
 from graphene.types.datetime import DateTime

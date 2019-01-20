@@ -210,8 +210,6 @@ class CreateManyMutation(BaseMutation):
         model = cls._meta.model
         manager = cls._meta.manager
         data = args.get(DATA_FIELD, [])
-        if isinstance(data, dict):
-            data = [data]
         # TODO: detect if PKs returning is requested or required by `set_related`
         plain_data_list = []
         related_data_list = []
@@ -256,7 +254,7 @@ class UpdateOneMutation(BaseMutation):
         plain_data, related_data = split_data(model, args_copy)
         if plain_data:
             query = model.update(**plain_data)
-            query = filter_query_with_subqueries(query, {pk_field.name: pk_value})
+            query = filter_query_with_subqueries(query, pk_value)
             yield from manager.execute(query)
         # TODO: check if it is requested
         obj = yield from manager.get(model, **{pk_field.name: pk_value})
@@ -288,16 +286,12 @@ class UpdateManyMutation(BaseMutation):
         if plain_data:
             query = model.update(**plain_data)
             query = filter_query_with_subqueries(query, filters)
-            total = yield from manager.execute(query)
-        else:
-            total = None
+            yield from manager.execute(query)
         # FIXME: After update select results could be different cause changed data could interfere with filters
         # TODO: check if it is requested
         select_query = model.select()
         select_query = filter(select_query, filters)
         result = yield from manager.execute(select_query)
-        if total is None:
-            total = len(result)
         yield from cls.set_related(result, related_data)
         # TODO: Seems like list conversion was fixed in peewee>=0.5.10, check it out
         return cls(**{AFFECTED_FIELD: result})
@@ -326,7 +320,7 @@ class DeleteOneMutation(BaseMutation):
         pk_value = args.get(pk_field.name)
         assert pk_value is not None
         query = model.delete()
-        query = filter_query_with_subqueries(query, {pk_field.name: pk_value})
+        query = filter_query_with_subqueries(query, pk_value)
         yield from manager.execute(query)
         return cls(**{AFFECTED_FIELD: model(**{pk_field.name: pk_value})})
 

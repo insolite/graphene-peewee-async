@@ -21,7 +21,16 @@ class TestDeleteMutation(ApiTest):
         '''))
 
         self.assertIsNone(result.errors)
-        self.assertEqual(result.data, {'delete_author': {'affected': {'id': author.id}}})
+        self.assertEqual(
+            result.data,
+            {
+                'delete_author': {
+                    'affected': {
+                        'id': author.id
+                    }
+                }
+            }
+        )
 
     def test_delete_many(self):
         author1 = self.loop.run_until_complete(
@@ -33,7 +42,11 @@ class TestDeleteMutation(ApiTest):
 
         result = self.loop.run_until_complete(self.query('''
             mutation {
-                delete_authors (filters: {id__in: ''' + json.dumps([author1.id, author2.id]) + '''}) {
+                delete_authors (
+                    filters: {
+                        id__in: ''' + json.dumps([author1.id, author2.id]) + '''
+                    }
+                ) {
                     affected {
                         total
                     }
@@ -42,4 +55,13 @@ class TestDeleteMutation(ApiTest):
         '''))
 
         self.assertIsNone(result.errors)
-        self.assertEqual(result.data, {'delete_authors': {'affected': {'total': 2}}})
+        self.assertEqual(
+            result.data,
+            {
+                'delete_authors': {
+                    'affected': {
+                        'total': 2
+                    }
+                }
+            }
+        )
