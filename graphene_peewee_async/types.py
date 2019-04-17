@@ -32,18 +32,29 @@ def construct_fields(model, registry):
 
 
 class PeeweeOptions(ObjectTypeOptions):
-
+    
     registry = None
     model = None
     manager = None
+    only_fields = None
+    exclude_fields = None
 
 
 class PeeweeObjectType(ObjectType):
 
     @classmethod
-    def __init_subclass_with_meta__(cls, registry=None, model=None, manager=None, **options):
+    def __init_subclass_with_meta__(cls,
+                                    registry=None,
+                                    model=None,
+                                    manager=None,
+                                    only_fields=None,
+                                    exclude_fields=None,
+                                    **options):
         if not registry:
             registry = get_global_registry()
+
+        assert not (only_fields and exclude_fields), 'only_fields is incompatible with exclude_fields'
+
         assert isinstance(registry, Registry), (
             'The attribute registry in {}.Meta needs to be an instance of '
             'Registry, received "{}".'
@@ -63,6 +74,18 @@ class PeeweeObjectType(ObjectType):
             _as=Field,
         )
 
+        if exclude_fields:
+            for field_name in exclude_fields:
+                if field_name in _meta.fields:
+                    del _meta.fields[field_name]
+
+        if only_fields:
+            _meta.fields = OrderedDict([
+                (name, value)
+                for name, value in _meta.fields.items()
+                if name in only_fields
+            ])
+
         super(PeeweeObjectType, cls).__init_subclass_with_meta__(_meta=_meta, **options)
 
         registry.register(cls)
@@ -78,8 +101,8 @@ class PeeweeObjectType(ObjectType):
             return True
         if not is_valid_peewee_model(type(root)):
             raise Exception((
-                'Received incompatible instance "{}".'
-            ).format(root))
+                                'Received incompatible instance "{}".'
+                            ).format(root))
         model = root._meta.model
         return model == cls._meta.model
 
