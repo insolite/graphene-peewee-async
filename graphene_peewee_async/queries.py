@@ -50,9 +50,9 @@ def convert_dict_to_node(query, qdict, alias_map={}):
             key, op = key.rsplit('__', 1)
             op = DJANGO_MAP[op]
         elif value is None:
-            op = OP.IS
+            op = DJANGO_MAP['is']
         else:
-            op = OP.EQ
+            op = DJANGO_MAP['eq']
         for piece in key.split('__'):
             model_attr = getattr(curr, piece)
             if isinstance(model_attr, FieldAlias):
@@ -63,7 +63,7 @@ def convert_dict_to_node(query, qdict, alias_map={}):
                 curr = model_attr.rel_model
                 curr = alias_map.get(curr, curr)
                 joins.append(model_attr)
-        accum.append(Expression(model_attr, op, value))
+        accum.append(op(model_attr, value))
     return accum, joins
 
 
